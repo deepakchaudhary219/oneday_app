@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oneday_app/app.dart';
+import 'package:oneday_app/core/auth/auth_repository.dart';
 import 'package:oneday_app/core/fake_repositories.dart';
 import 'package:oneday_app/core/providers.dart';
 import 'package:oneday_app/features/chats/chat_thread_screen.dart';
@@ -14,6 +15,12 @@ Widget _app(Widget child) => ProviderScope(
   overrides: [
     dataProvider.overrideWithValue(
       FakeData(latency: const Duration(milliseconds: 10)),
+    ),
+    authRepositoryProvider.overrideWithValue(
+      FakeAuthRepository(
+        initial: const AuthState(AuthStage.signedIn),
+        latency: Duration.zero,
+      ),
     ),
   ],
   child: MaterialApp(theme: OdTheme.dark(), home: child),
@@ -38,6 +45,12 @@ void main() {
             dataProvider.overrideWithValue(
               FakeData(latency: const Duration(milliseconds: 10)),
             ),
+            authRepositoryProvider.overrideWithValue(
+              FakeAuthRepository(
+                initial: const AuthState(AuthStage.signedIn),
+                latency: Duration.zero,
+              ),
+            ),
           ],
           child: const OneDayApp(),
         ),
@@ -61,6 +74,12 @@ void main() {
         overrides: [
           dataProvider.overrideWithValue(
             FakeData(latency: const Duration(milliseconds: 10)),
+          ),
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(
+              initial: const AuthState(AuthStage.signedIn),
+              latency: Duration.zero,
+            ),
           ),
         ],
         child: const OneDayApp(),
@@ -121,9 +140,8 @@ void main() {
       tester.view.devicePixelRatio = 3;
       const conv = Conversation(
         id: 'c1',
+        conversationId: 'c1',
         firstName: 'Riya',
-        lastMessage: '',
-        when: 'now',
         warmth: 2,
         seed: 1,
       );
@@ -210,6 +228,12 @@ void main() {
           overrides: [
             dataProvider.overrideWithValue(
               FakeData(latency: const Duration(milliseconds: 10)),
+            ),
+            authRepositoryProvider.overrideWithValue(
+              FakeAuthRepository(
+                initial: const AuthState(AuthStage.signedIn),
+                latency: Duration.zero,
+              ),
             ),
           ],
           child: const OneDayApp(),

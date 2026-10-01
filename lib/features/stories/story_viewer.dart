@@ -133,9 +133,10 @@ class _StoryViewerState extends State<StoryViewer>
                   children: [
                     AnimatedSwitcher(
                       duration: OdMotion.of(context, OdMotion.quick),
-                      child: OdMediaArt(
+                      child: OdMedia(
                         key: ValueKey('$_story-$_frame'),
                         seed: frame.seed,
+                        url: frame.mediaUrl,
                       ),
                     ),
                     const OdScrim(top: 0.22, bottom: 0.3),

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models.dart';
+import '../../core/network/api_error.dart';
+import '../../core/repositories.dart';
 import '../../core/providers.dart';
 import '../../design_system/design_system.dart';
 
-final signalsLeftProvider = FutureProvider.autoDispose<int>(
-  (ref) => ref.watch(nearbyRepositoryProvider).signalsLeftToday(),
+final signalsLeftProvider = FutureProvider.autoDispose<SignalBudget>(
+  (ref) => ref.watch(nearbyRepositoryProvider).budget(),
 );
 
 /// Nearby moments, one per screen (TikTok's immersion) but bounded: the pager ends with a closure card, because
@@ -22,13 +25,37 @@ class NearbyScreen extends ConsumerWidget {
       child: moments.when(
         loading: () => const _NearbyLoading(),
         error: (e, _) => Center(
-          child: OdClosureCard(
-            icon: Icons.wifi_off_rounded,
-            title: 'Couldn\'t load who\'s nearby',
-            message: 'Check your connection and try again.',
-            actionLabel: 'Try again',
-            onAction: () => ref.invalidate(nearbyMomentsProvider),
-          ),
+          child: e is LocationRequired
+              ? OdClosureCard(
+                  icon: Icons.near_me_rounded,
+                  title: 'See who\'s around',
+                  message: 'Share your area while the app is open. People see a distance band, never where you are.',
+                  actionLabel: 'Share my area',
+                  onAction: () async {
+                    final ok = await ref.read(locationShareProvider).share();
+                    if (!context.mounted) return;
+                    if (ok) {
+                      ref.invalidate(nearbyMomentsProvider);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Couldn\'t get your location. Check location permission.',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                )
+              : OdClosureCard(
+                  icon: Icons.wifi_off_rounded,
+                  title: 'Couldn\'t load who\'s nearby',
+                  message: e is ApiError
+                      ? e.detail
+                      : 'Check your connection and try again.',
+                  actionLabel: 'Try again',
+                  onAction: () => ref.invalidate(nearbyMomentsProvider),
+                ),
         ),
         data: (list) => RefreshIndicator(
           onRefresh: () async => ref.invalidate(nearbyMomentsProvider),
@@ -64,7 +91,7 @@ class _MomentPageState extends ConsumerState<_MomentPage> {
   SignalReaction? _sent;
 
   Future<void> _signal() async {
-    final left = ref.read(signalsLeftProvider).value ?? 0;
+    final left = ref.read(signalsLeftProvider).value?.remaining ?? 0;
     final reaction = await showOdSheet<SignalReaction>(
       context,
       builder: (_) => _SignalSheet(moment: widget.moment, left: left),
@@ -76,9 +103,15 @@ class _MomentPageState extends ConsumerState<_MomentPage> {
           .read(nearbyRepositoryProvider)
           .sendSignal(widget.moment.id, reaction);
       ref.invalidate(signalsLeftProvider);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _sent = null);
+      if (e is ApiError && e.code.endsWith('VERIFICATION_REQUIRED')) {
+        // Progressive verification: the first contact action is where we ask, and the signal isn't spent.
+        final verified = await context.push<bool>('/verify');
+        if (verified == true && mounted) _signal();
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Couldn\'t send. Your signal wasn\'t used.'),
@@ -95,7 +128,7 @@ class _MomentPageState extends ConsumerState<_MomentPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        OdMediaArt(seed: m.seed),
+        OdMedia(seed: m.seed, url: m.previewUrl),
         const OdScrim(),
         Positioned(
           top: padding.top + OdSpace.x1,
@@ -111,14 +144,21 @@ class _MomentPageState extends ConsumerState<_MomentPage> {
               Flexible(
                 child: Consumer(
                   builder: (context, ref, _) {
-                    final left = ref.watch(signalsLeftProvider).value;
+                    final budget = ref.watch(signalsLeftProvider).value;
+                    final label = budget == null
+                        ? 'Signals'
+                        : budget.remaining > 0
+                        ? '${budget.remaining} ${budget.remaining == 1 ? 'signal' : 'signals'} left today'
+                        : budget.nextFreesAt == null
+                        ? 'No signals left today'
+                        : 'More at ${TimeOfDay.fromDateTime(budget.nextFreesAt!.toLocal()).format(context)}';
                     return OdFrosted(
                       padding: const EdgeInsets.symmetric(
                         horizontal: OdSpace.x1_5,
                         vertical: OdSpace.x1,
                       ),
                       child: Text(
-                        left == null ? 'Signals' : '$left signals left today',
+                        label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.type.labelMedium?.copyWith(
@@ -177,7 +217,11 @@ class _MomentPageState extends ConsumerState<_MomentPage> {
                   ),
                   const SizedBox(height: OdSpace.x0_5),
                   Text(
-                    '${m.activity} · ${m.band.label} · ${m.postedAgo}',
+                    [
+                      m.activity,
+                      m.distance,
+                      if (m.postedAgo != null) m.postedAgo,
+                    ].where((p) => p != null && p.isNotEmpty).join(' · '),
                     style: context.type.bodyMedium?.copyWith(
                       color: Colors.white70,
                     ),

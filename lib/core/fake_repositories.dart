@@ -10,12 +10,14 @@ class FakeData
         NearbyRepository,
         SignalsRepository,
         ChatRepository,
-        StoryRepository {
+        StoryRepository,
+        ProfileRepository {
   FakeData({this.latency = const Duration(milliseconds: 450)});
 
   final Duration latency;
 
   int _signals = 3;
+  static const _dailySignals = 3;
 
   final _pending = <IncomingSignal>[
     const IncomingSignal(
@@ -30,7 +32,7 @@ class FakeData
     const IncomingSignal(
       id: 's2',
       firstName: 'Kabir',
-      reaction: SignalReaction.wantToJoin,
+      reaction: SignalReaction.wantToKnowMore,
       activity: 'badminton',
       sharedContext: 'You both play badminton on weekends',
       timeLeft: '2 days left',
@@ -58,7 +60,7 @@ class FakeData
         id: 'm1',
         firstName: 'Riya',
         activity: 'sunrise trek',
-        band: DistanceBand.walkable,
+        distance: '1-5 km',
         postedAgo: '12m',
         seed: 1,
         prompt: 'Best view in your city?',
@@ -67,7 +69,7 @@ class FakeData
         id: 'm2',
         firstName: 'Arjun',
         activity: 'chess',
-        band: DistanceBand.veryClose,
+        distance: 'Under 1 km',
         postedAgo: '25m',
         seed: 2,
       ),
@@ -75,7 +77,7 @@ class FakeData
         id: 'm3',
         firstName: 'Sana',
         activity: 'street food',
-        band: DistanceBand.nearby,
+        distance: '5-15 km',
         postedAgo: '40m',
         seed: 3,
       ),
@@ -83,7 +85,7 @@ class FakeData
         id: 'm4',
         firstName: 'Dev',
         activity: 'cycling',
-        band: DistanceBand.acrossTown,
+        distance: 'In your city',
         postedAgo: '1h',
         seed: 4,
       ),
@@ -91,7 +93,7 @@ class FakeData
         id: 'm5',
         firstName: 'Ira',
         activity: 'pottery',
-        band: DistanceBand.walkable,
+        distance: '1-5 km',
         postedAgo: '2h',
         seed: 5,
       ),
@@ -104,7 +106,15 @@ class FakeData
   }
 
   @override
-  Future<int> signalsLeftToday() => _later(_signals);
+  Future<SignalBudget> budget() => _later(
+    SignalBudget(
+      remaining: _signals,
+      daily: _dailySignals,
+      nextFreesAt: _signals == 0
+          ? DateTime.now().add(const Duration(hours: 9))
+          : null,
+    ),
+  );
 
   @override
   Future<void> sendSignal(String momentId, SignalReaction reaction) async {
@@ -130,43 +140,51 @@ class FakeData
   }
 
   @override
-  Future<List<Conversation>> conversations() => _later(const [
-    Conversation(
-      id: 'c1',
-      firstName: 'Riya',
-      lastMessage: 'Same time Saturday? ☕',
-      when: '2m',
-      warmth: 3,
-      seed: 1,
-      unread: true,
-      hasStory: true,
-    ),
-    Conversation(
-      id: 'c2',
-      firstName: 'Arjun',
-      lastMessage: 'That opening was wild',
-      when: '1h',
-      warmth: 2,
-      seed: 2,
-      hasStory: true,
-    ),
-    Conversation(
-      id: 'c3',
-      firstName: 'Sana',
-      lastMessage: 'You: sending the place 📍',
-      when: 'Yesterday',
-      warmth: 1,
-      seed: 3,
-    ),
-    Conversation(
-      id: 'c4',
-      firstName: 'Dev',
-      lastMessage: 'New connection, say hi 👋',
-      when: 'Mon',
-      warmth: 0,
-      seed: 4,
-    ),
-  ]);
+  Future<List<Conversation>> conversations() {
+    final now = DateTime.now();
+    return _later([
+      Conversation(
+        id: 'c1',
+        conversationId: 'c1',
+        firstName: 'Riya',
+        lastMessage: 'Same time Saturday? ☕',
+        lastAt: now.subtract(const Duration(minutes: 2)),
+        warmth: 3,
+        seed: 1,
+        unread: true,
+        hasStory: true,
+        encrypted: true,
+      ),
+      Conversation(
+        id: 'c2',
+        conversationId: 'c2',
+        firstName: 'Arjun',
+        lastMessage: 'That opening was wild',
+        lastAt: now.subtract(const Duration(hours: 1)),
+        warmth: 2,
+        seed: 2,
+        hasStory: true,
+      ),
+      Conversation(
+        id: 'c3',
+        conversationId: 'c3',
+        firstName: 'Sana',
+        lastMessage: 'sending the place 📍',
+        lastFromMe: true,
+        lastAt: now.subtract(const Duration(days: 1)),
+        warmth: 1,
+        seed: 3,
+      ),
+      const Conversation(
+        id: 'c4',
+        conversationId: 'c4',
+        firstName: 'Dev',
+        warmthLine: 'You both love cycling. Ask about their favourite route?',
+        warmth: 0,
+        seed: 4,
+      ),
+    ]);
+  }
 
   @override
   Future<List<ChatMessage>> history(String conversationId) {
@@ -222,6 +240,10 @@ class FakeData
     _messages.putIfAbsent(conversationId, () => []).add(message);
     return message;
   }
+
+  @override
+  Future<MyProfile> me() =>
+      _later(const MyProfile(displayName: 'Asha', homeRegion: 'Bengaluru'));
 
   @override
   Future<List<Story>> friendsStories() => _later(const [

@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'models.dart';
 
-/// Data access for the features. Screens see only these interfaces; the implementation is chosen in one
-/// provider ([repositoryProvider]-style overrides in tests, the generated API client in production).
+/// Data access for the features. Screens see only these interfaces; [FakeData] backs them in design/demo mode and
+/// the `Api*` implementations against the backend (chosen in providers.dart from ApiConfig).
 abstract interface class NearbyRepository {
   /// One bounded page: the backend caps results, and the UI ends with a closure card.
   Future<List<NearbyMoment>> nearby({String? activity});
 
-  Future<int> signalsLeftToday();
+  Future<SignalBudget> budget();
 
   Future<void> sendSignal(String momentId, SignalReaction reaction);
 }
@@ -35,6 +35,10 @@ abstract interface class ChatRepository {
   });
 }
 
+abstract interface class ProfileRepository {
+  Future<MyProfile> me();
+}
+
 abstract interface class StoryRepository {
   Future<List<Story>> friendsStories();
 }
@@ -44,4 +48,9 @@ class EmpathyCheck implements Exception {
   const EmpathyCheck(this.reflection);
 
   final String reflection;
+}
+
+/// Nearby needs the person's (coarse) location first.
+class LocationRequired implements Exception {
+  const LocationRequired();
 }

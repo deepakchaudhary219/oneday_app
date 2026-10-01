@@ -26,11 +26,12 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   @override
   void initState() {
     super.initState();
-    ref.read(chatRepositoryProvider).history(widget.conversation.id).then((
-      list,
-    ) {
-      if (mounted) setState(() => _messages = List.of(list));
-    });
+    ref
+        .read(chatRepositoryProvider)
+        .history(widget.conversation.conversationId ?? widget.conversation.id)
+        .then((list) {
+          if (mounted) setState(() => _messages = List.of(list));
+        });
   }
 
   @override
@@ -57,7 +58,11 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     try {
       final sent = await ref
           .read(chatRepositoryProvider)
-          .send(widget.conversation.id, body, sendAnyway: sendAnyway);
+          .send(
+            widget.conversation.conversationId ?? widget.conversation.id,
+            body,
+            sendAnyway: sendAnyway,
+          );
       if (!mounted) return;
       setState(
         () => _messages = [

@@ -248,7 +248,7 @@ class _ConversationTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    conv.lastMessage,
+                    conv.preview,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: context.type.bodyMedium?.copyWith(
@@ -265,7 +265,12 @@ class _ConversationTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(conv.when, style: context.type.labelSmall),
+                Text(
+                  conv.lastAt == null
+                      ? 'New'
+                      : ago(DateTime.now().difference(conv.lastAt!)),
+                  style: context.type.labelSmall,
+                ),
                 const SizedBox(height: 6),
                 AnimatedOpacity(
                   opacity: conv.unread ? 1 : 0,

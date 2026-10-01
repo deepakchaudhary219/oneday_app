@@ -5,6 +5,7 @@ export 'components/avatar.dart';
 export 'components/button.dart';
 export 'components/chips.dart';
 export 'components/feedback.dart';
+export 'components/media.dart';
 export 'components/media_art.dart';
 export 'components/pressable.dart';
 export 'components/surfaces.dart';

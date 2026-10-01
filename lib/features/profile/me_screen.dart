@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/auth/auth_controller.dart';
+import '../../core/providers.dart';
 import '../../design_system/design_system.dart';
 import '../gallery/gallery_screen.dart';
 
 /// You: your story, your Pulse Status, and the controls that matter (privacy, safety). There are no follower
 /// counts and no score, because there's nothing to compare.
-class MeScreen extends StatefulWidget {
+class MeScreen extends ConsumerStatefulWidget {
   const MeScreen({super.key});
 
   @override
-  State<MeScreen> createState() => _MeScreenState();
+  ConsumerState<MeScreen> createState() => _MeScreenState();
 }
 
-class _MeScreenState extends State<MeScreen> {
+class _MeScreenState extends ConsumerState<MeScreen> {
   static const _moods = [
     ('😌', 'Chill'),
     ('🥳', 'Celebrating'),
@@ -25,6 +29,16 @@ class _MeScreenState extends State<MeScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.od;
+    // The token knows the moment a face check passes; the profile catches up on the next fetch.
+    ref.listen(
+      authControllerProvider,
+      (_, _) => ref.invalidate(myProfileProvider),
+    );
+    final profile = ref.watch(myProfileProvider).value;
+    final name = profile?.displayName ?? '';
+    final verified =
+        ref.watch(authControllerProvider).verified ||
+        (profile?.verified ?? false);
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -35,8 +49,8 @@ class _MeScreenState extends State<MeScreen> {
               children: [
                 Row(
                   children: [
-                    const OdAvatar(
-                      name: 'Asha',
+                    OdAvatar(
+                      name: name.isEmpty ? '?' : name,
                       size: 84,
                       ring: OdRing.live,
                       seed: 9,
@@ -46,25 +60,39 @@ class _MeScreenState extends State<MeScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Asha', style: context.type.headlineSmall),
+                          name.isEmpty
+                              ? const OdSkeleton(width: 120, height: 24)
+                              : Text(name, style: context.type.headlineSmall),
                           const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.verified_rounded,
-                                size: 16,
-                                color: c.safety,
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  'Verified · Bengaluru',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.type.bodyMedium,
+                          if (verified)
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.verified_rounded,
+                                  size: 16,
+                                  color: c.safety,
                                 ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    profile?.homeRegion == null
+                                        ? 'Verified'
+                                        : 'Verified · ${profile!.homeRegion}',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: context.type.bodyMedium,
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: OdChip(
+                                label: 'Get verified',
+                                icon: Icons.verified_outlined,
+                                onTap: () => context.push('/verify'),
                               ),
-                            ],
-                          ),
+                            ),
                         ],
                       ),
                     ),
@@ -139,14 +167,24 @@ class _MeScreenState extends State<MeScreen> {
                     ),
                     (Icons.help_outline_rounded, 'Help & grievances', ''),
                   ],
-                  trailing: OdButton(
-                    label: 'Design system gallery',
-                    variant: OdButtonVariant.ghost,
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const GalleryScreen(),
+                  trailing: Column(
+                    children: [
+                      OdButton(
+                        label: 'Design system gallery',
+                        variant: OdButtonVariant.ghost,
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const GalleryScreen(),
+                          ),
+                        ),
                       ),
-                    ),
+                      OdButton(
+                        label: 'Sign out',
+                        variant: OdButtonVariant.ghost,
+                        onPressed: () =>
+                            ref.read(authControllerProvider.notifier).signOut(),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 120),
