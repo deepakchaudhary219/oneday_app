@@ -136,6 +136,7 @@ class _StoryViewerState extends State<StoryViewer>
                       child: OdMedia(
                         key: ValueKey('$_story-$_frame'),
                         seed: frame.seed,
+                        activity: frame.activity ?? frame.caption,
                         url: frame.mediaUrl,
                       ),
                     ),
@@ -160,24 +161,29 @@ class _StoryViewerState extends State<StoryViewer>
                                 seed: _current.seed,
                               ),
                               const SizedBox(width: OdSpace.x1),
-                              Flexible(
-                                child: Text(
-                                  _current.firstName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.type.titleMedium?.copyWith(
-                                    color: Colors.white,
-                                  ),
+                              // Name and time take the free space so the close button sits at the edge.
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        _current.firstName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: context.type.titleMedium
+                                            ?.copyWith(color: Colors.white),
+                                      ),
+                                    ),
+                                    const SizedBox(width: OdSpace.x1),
+                                    Text(
+                                      frame.postedAgo,
+                                      style: context.type.labelMedium?.copyWith(
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(width: OdSpace.x1),
-                              Text(
-                                frame.postedAgo,
-                                style: context.type.labelMedium?.copyWith(
-                                  color: Colors.white70,
-                                ),
-                              ),
-                              const Spacer(),
                               OdIconButton(
                                 icon: Icons.close_rounded,
                                 semanticLabel: 'Close story',

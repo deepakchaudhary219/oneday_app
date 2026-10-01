@@ -10,7 +10,9 @@ The OneDay mobile app: a camera-first, location-aware social and dating app. The
 
 ```
 lib/
-  design_system/   tokens (colour, spacing, radii, motion, type), theme, components; screens import design_system.dart only
+  design_system/   tokens (colour, spacing, radii, motion, type), theme, components (incl. the swipe deck) and
+                   illustration/ (drawn portraits and places for demo data and loading states);
+                   screens import design_system.dart only
   core/            domain models, repository interfaces, fake data, Riverpod providers
     network/       ApiClient (token refresh, idempotency, retries, problem details), token storage, config
     auth/          AuthRepository (API + fake), AuthController (session state the router follows)
@@ -47,7 +49,7 @@ flutter run --dart-define=ONEDAY_API_URL=http://10.0.2.2:8080 --dart-define=ONED
 ONEDAY_LIVE_API=http://localhost:8080 ONEDAY_LIVE_LOG=/path/to/backend.log flutter test test/live
 ```
 
-With no `ONEDAY_API_URL` the app runs on fake data: phone code `123456`, any email with a 12+ character password. Until a location plugin is added, `ONEDAY_DEV_LOCATION` supplies the area that "Share my area" sends. The web build can't call the API yet because the backend has no CORS setup.
+With no `ONEDAY_API_URL` the app runs on fake data: phone code `123456`, any email with a 12+ character password. Add `--dart-define=ONEDAY_DEMO_SIGNED_IN=true` to skip sign-in for demos and design reviews. Until a location plugin is added, `ONEDAY_DEV_LOCATION` supplies the area that "Share my area" sends. The web build can't call the API yet because the backend has no CORS setup.
 
 ### When the backend contract changes
 

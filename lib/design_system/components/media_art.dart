@@ -1,43 +1,72 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
-/// Placeholder "media" until real photos and videos flow from the API: a deterministic, painterly gradient
-/// per seed, so screens look like real content (and screenshots stay stable).
+import '../illustration/portrait.dart';
+import '../illustration/scene.dart';
+
+export '../illustration/scene.dart' show SceneKind;
+
+/// Stand-in media until real photos and videos load (and in demo mode): a painted place, optionally with the
+/// person in it, deterministic per seed so screens look inhabited and screenshots stay stable.
 class OdMediaArt extends StatelessWidget {
-  const OdMediaArt({super.key, required this.seed, this.child});
+  const OdMediaArt({
+    super.key,
+    required this.seed,
+    this.activity,
+    this.scene,
+    this.subject,
+    this.child,
+  });
 
   final int seed;
-  final Widget? child;
 
-  static const _palettes = [
-    [Color(0xFFFF9A62), Color(0xFFE2366F), Color(0xFF3B1E6B)], // sunset
-    [Color(0xFF52E5C4), Color(0xFF2A7FDB), Color(0xFF14204A)], // lagoon
-    [Color(0xFFFFE07A), Color(0xFF7BC86C), Color(0xFF1D4D3A)], // monsoon green
-    [Color(0xFFB794F6), Color(0xFF6B46C1), Color(0xFF1A103D)], // dusk
-    [Color(0xFFFFB199), Color(0xFFFF0844), Color(0xFF3D0A1E)], // holi
-    [Color(0xFF9BE15D), Color(0xFF00C9A7), Color(0xFF0B3D3A)], // western ghats
-  ];
+  /// Picks a fitting place ("sunrise trek" → mountains) when [scene] isn't given.
+  final String? activity;
+  final SceneKind? scene;
+
+  /// The person in the shot, by their seed; null for a scenery-only moment.
+  final int? subject;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    final rnd = math.Random(seed);
-    final colors = _palettes[seed.abs() % _palettes.length];
+    final kind = scene ?? SceneKind.of(activity, seed);
     return RepaintBoundary(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(
-              rnd.nextDouble() * 1.6 - 0.8,
-              rnd.nextDouble() * 1.2 - 0.9,
-            ),
-            radius: 1.3,
-            colors: colors,
-            stops: const [0, 0.55, 1],
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CustomPaint(
+            painter: OdScenePainter(kind: kind, seed: seed),
           ),
-        ),
-        child: child ?? const SizedBox.expand(),
+          if (subject != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: FractionallySizedBox(
+                widthFactor: 0.92,
+                heightFactor: 0.62,
+                child: CustomPaint(
+                  painter: OdPortraitPainter(subject!, background: false),
+                ),
+              ),
+            ),
+          ?child,
+        ],
       ),
     );
   }
+}
+
+/// An illustrated person filling its box (square crop), used by avatars without a photo.
+class OdPortrait extends StatelessWidget {
+  const OdPortrait({super.key, required this.seed, this.background = true});
+
+  final int seed;
+  final bool background;
+
+  @override
+  Widget build(BuildContext context) => RepaintBoundary(
+    child: CustomPaint(
+      painter: OdPortraitPainter(seed, background: background),
+      size: Size.infinite,
+    ),
+  );
 }

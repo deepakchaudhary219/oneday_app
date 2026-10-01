@@ -88,12 +88,14 @@ void main() {
     await settle(tester);
     await tester.tap(find.bySemanticsLabel('Nearby'));
     await settle(tester);
-    for (var i = 0; i < 5; i++) {
-      await tester.fling(
-        find.byType(PageView).last,
-        const Offset(0, -600),
-        2000,
-      );
+    // One swipe left, then the Pass button for the rest: both deal the same way.
+    await tester.drag(
+      find.bySemanticsLabel(RegExp('^Riya, ')),
+      const Offset(-400, 0),
+    );
+    await settle(tester, 15);
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(find.bySemanticsLabel('Pass'));
       await settle(tester, 15);
     }
     expect(find.text('That\'s everyone nearby for now'), findsOneWidget);

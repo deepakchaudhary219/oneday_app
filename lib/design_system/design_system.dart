@@ -9,6 +9,7 @@ export 'components/media.dart';
 export 'components/media_art.dart';
 export 'components/pressable.dart';
 export 'components/surfaces.dart';
+export 'components/swipe_deck.dart';
 export 'theme.dart';
 export 'tokens/colors.dart';
 export 'tokens/motion.dart';

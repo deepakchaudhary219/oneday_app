@@ -27,6 +27,7 @@ abstract final class OdTheme {
         );
     return ThemeData(
       useMaterial3: true,
+      fontFamily: OdType.family,
       brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: c.canvas,

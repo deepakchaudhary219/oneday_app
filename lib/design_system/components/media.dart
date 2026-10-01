@@ -6,16 +6,33 @@ import 'media_art.dart';
 /// Shows real media when there's a URL, fading it in over the placeholder art, and keeps the art if it fails. It
 /// decodes at the size it's drawn, not the file's size, to save memory and keep scrolling smooth.
 class OdMedia extends StatelessWidget {
-  const OdMedia({super.key, required this.seed, this.url, this.child});
+  const OdMedia({
+    super.key,
+    required this.seed,
+    this.url,
+    this.activity,
+    this.subject,
+    this.child,
+  });
 
   final int seed;
+
+  /// Passed to the placeholder art: the place it shows and the person in it.
+  final String? activity;
+  final int? subject;
   final String? url;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    final art = OdMediaArt(seed: seed, child: child);
-    if (url == null || url!.isEmpty) return art;
+    final hasUrl = url != null && url!.isNotEmpty;
+    final art = OdMediaArt(
+      seed: seed,
+      activity: activity,
+      subject: subject,
+      child: hasUrl ? null : child,
+    );
+    if (!hasUrl) return art;
     return LayoutBuilder(
       builder: (context, box) {
         final dpr = MediaQuery.devicePixelRatioOf(context);

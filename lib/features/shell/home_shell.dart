@@ -78,16 +78,23 @@ class _HomeShellState extends State<HomeShell> {
       child: Scaffold(
         backgroundColor: Colors.black,
         extendBody: true,
-        body: PageView(
-          controller: _pages,
-          onPageChanged: (_) => HapticFeedback.selectionClick(),
-          children: const [
-            _KeepAlive(child: MapScreen()),
-            _KeepAlive(child: ChatsScreen()),
-            _KeepAlive(child: CameraScreen()),
-            _KeepAlive(child: NearbyScreen()),
-            _KeepAlive(child: MeScreen()),
-          ],
+        // On Nearby, horizontal swipes belong to the card deck (as in Tinder); the bar still moves between tabs.
+        body: ValueListenableBuilder<double>(
+          valueListenable: _position,
+          builder: (context, position, pages) => PageView(
+            controller: _pages,
+            physics: (position - HomeTab.nearby.index).abs() < 0.01
+                ? const NeverScrollableScrollPhysics()
+                : null,
+            onPageChanged: (_) => HapticFeedback.selectionClick(),
+            children: const [
+              _KeepAlive(child: MapScreen()),
+              _KeepAlive(child: ChatsScreen()),
+              _KeepAlive(child: CameraScreen()),
+              _KeepAlive(child: NearbyScreen()),
+              _KeepAlive(child: MeScreen()),
+            ],
+          ),
         ),
         bottomNavigationBar: ValueListenableBuilder<double>(
           valueListenable: _position,

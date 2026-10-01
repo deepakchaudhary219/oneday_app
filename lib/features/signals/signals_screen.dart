@@ -1,7 +1,4 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,8 +21,9 @@ class SignalsScreen extends ConsumerStatefulWidget {
 
 class _SignalsScreenState extends ConsumerState<SignalsScreen> {
   final _decided = <String>{};
+  final _deck = OdSwipeController();
 
-  Future<void> _decide(IncomingSignal signal, bool reveal) async {
+  Future<bool> _decide(IncomingSignal signal, bool reveal) async {
     setState(
       () => _decided.add(signal.id),
     ); // optimistic: the card is already gone
@@ -33,7 +31,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
     try {
       if (reveal) {
         await repo.reveal(signal.id);
-        if (!mounted) return;
+        if (!mounted) return true;
         HapticFeedback.heavyImpact();
         await showDialog<void>(
           context: context,
@@ -43,12 +41,14 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
       } else {
         await repo.letPass(signal.id);
       }
+      return true;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _decided.remove(signal.id));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('That didn\'t go through. Try again.')),
       );
+      return false;
     }
   }
 
@@ -93,17 +93,19 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
               ),
               const SizedBox(height: OdSpace.x2),
               Expanded(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    for (var i = math.min(open.length, 3) - 1; i >= 0; i--)
-                      _StackedCard(
-                        key: ValueKey(open[i].id),
-                        depth: i,
-                        signal: open[i],
-                        onDecided: (reveal) => _decide(open[i], reveal),
-                      ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: OdSpace.gutter,
+                  ),
+                  child: OdSwipeDeck<IncomingSignal>(
+                    items: open,
+                    itemKey: (s) => s.id,
+                    controller: _deck,
+                    rightLabel: 'REVEAL',
+                    leftLabel: 'PASS',
+                    onDecision: _decide,
+                    builder: (context, signal) => _SignalCard(signal: signal),
+                  ),
                 ),
               ),
               SafeArea(
@@ -115,7 +117,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
                       child: OdButton(
                         label: 'Let it pass',
                         variant: OdButtonVariant.secondary,
-                        onPressed: () => _decide(open.first, false),
+                        onPressed: () => _deck.swipe(right: false),
                       ),
                     ),
                     const SizedBox(width: OdSpace.x1_5),
@@ -123,7 +125,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
                       child: OdButton(
                         label: 'Reveal',
                         icon: Icons.favorite_rounded,
-                        onPressed: () => _decide(open.first, true),
+                        onPressed: () => _deck.swipe(right: true),
                       ),
                     ),
                   ],
@@ -137,127 +139,19 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
   }
 }
 
-class _StackedCard extends StatefulWidget {
-  const _StackedCard({
-    super.key,
-    required this.depth,
-    required this.signal,
-    required this.onDecided,
-  });
-
-  final int depth;
-  final IncomingSignal signal;
-  final ValueChanged<bool> onDecided;
-
-  @override
-  State<_StackedCard> createState() => _StackedCardState();
-}
-
-class _StackedCardState extends State<_StackedCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController.unbounded(
-    vsync: this,
-  )..addListener(() => setState(() {}));
-  Offset _offset = Offset.zero;
-  Offset _from = Offset.zero;
-  Offset _to = Offset.zero;
-  bool _thresholdBuzzed = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Offset get _current => _controller.isAnimating
-      ? Offset.lerp(_from, _to, _controller.value)!
-      : _offset;
-
-  void _release(Velocity velocity, double width) {
-    final dx = _offset.dx;
-    final vx = velocity.pixelsPerSecond.dx;
-    final decided = dx.abs() > width * 0.28 || vx.abs() > 1100;
-    _from = _offset;
-    if (decided) {
-      final right = (dx + vx * 0.1) > 0;
-      _to = Offset(
-        (right ? 1.5 : -1.5) * width,
-        _offset.dy + velocity.pixelsPerSecond.dy * 0.15,
-      );
-      _controller
-          .animateWith(SpringSimulation(OdMotion.spring, 0, 1, 0))
-          .whenComplete(() => widget.onDecided(right));
-    } else {
-      _to = Offset.zero;
-      _controller
-          .animateWith(SpringSimulation(OdMotion.spring, 0, 1, 0))
-          .whenComplete(() => _offset = Offset.zero);
-    }
-    _thresholdBuzzed = false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final top = widget.depth == 0;
-    final offset = _current;
-    final tilt = offset.dx / width * 0.35;
-    final intent = (offset.dx / (width * 0.28)).clamp(-1.0, 1.0);
-    return AnimatedPadding(
-      duration: OdMotion.of(context, OdMotion.standard),
-      curve: OdMotion.enter,
-      padding: EdgeInsets.only(top: widget.depth * 14.0),
-      child: AnimatedScale(
-        duration: OdMotion.of(context, OdMotion.standard),
-        scale: 1 - widget.depth * 0.05,
-        child: Transform.translate(
-          offset: offset,
-          child: Transform.rotate(
-            angle: tilt,
-            child: GestureDetector(
-              onPanUpdate: top
-                  ? (d) {
-                      setState(() => _offset += d.delta);
-                      final past = _offset.dx.abs() > width * 0.28;
-                      if (past && !_thresholdBuzzed) {
-                        HapticFeedback.selectionClick(); // tells the thumb "release now decides"
-                        _thresholdBuzzed = true;
-                      } else if (!past) {
-                        _thresholdBuzzed = false;
-                      }
-                    }
-                  : null,
-              onPanEnd: top ? (d) => _release(d.velocity, width) : null,
-              child: _SignalCard(
-                signal: widget.signal,
-                intent: top ? intent : 0,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SignalCard extends StatelessWidget {
-  const _SignalCard({required this.signal, required this.intent});
+  const _SignalCard({required this.signal});
 
   final IncomingSignal signal;
 
-  /// -1 (pass) to 1 (reveal) while dragging.
-  final double intent;
-
   @override
   Widget build(BuildContext context) {
-    final c = context.od;
-    final size = MediaQuery.sizeOf(context);
     return Semantics(
       label:
           '${signal.firstName} sent ${signal.reaction.label}. ${signal.sharedContext}. ${signal.timeLeft}.',
       child: Container(
-        width: size.width - OdSpace.gutter * 2,
-        height: math.min(size.height * 0.56, 520),
+        width: double.infinity,
+        height: double.infinity,
         decoration: ShapeDecoration(
           shape: RoundedSuperellipseBorder(
             borderRadius: BorderRadius.circular(OdRadius.xl),
@@ -274,7 +168,7 @@ class _SignalCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            OdMediaArt(seed: signal.seed + 100),
+            OdMediaArt(seed: signal.seed, activity: signal.activity),
             const OdScrim(top: 0.1, bottom: 0.55),
             Positioned(
               left: OdSpace.x3,
@@ -285,11 +179,27 @@ class _SignalCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        signal.reaction.emoji,
-                        style: const TextStyle(fontSize: 28),
+                      // Their face, with the reaction they chose pinned to it.
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          OdAvatar(
+                            name: signal.firstName,
+                            seed: signal.seed,
+                            size: 56,
+                            ring: OdRing.live,
+                          ),
+                          Positioned(
+                            right: -6,
+                            bottom: -4,
+                            child: Text(
+                              signal.reaction.emoji,
+                              style: const TextStyle(fontSize: 24),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: OdSpace.x1),
+                      const SizedBox(width: OdSpace.x1_5),
                       Expanded(
                         child: Text(
                           '${signal.firstName}: "${signal.reaction.label}"',
@@ -331,52 +241,7 @@ class _SignalCard extends StatelessWidget {
                 ],
               ),
             ),
-            // Decision hints fade in with the drag: what releasing will do, before it happens.
-            Positioned(
-              top: OdSpace.x3,
-              left: OdSpace.x3,
-              child: Opacity(
-                opacity: intent.clamp(0.0, 1.0),
-                child: _Stamp(label: 'REVEAL', color: c.safety),
-              ),
-            ),
-            Positioned(
-              top: OdSpace.x3,
-              right: OdSpace.x3,
-              child: Opacity(
-                opacity: (-intent).clamp(0.0, 1.0),
-                child: _Stamp(label: 'PASS', color: c.textTertiary),
-              ),
-            ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Stamp extends StatelessWidget {
-  const _Stamp({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: OdSpace.x1_5,
-        vertical: OdSpace.x0_5,
-      ),
-      decoration: BoxDecoration(
-        border: Border.all(color: color, width: 3),
-        borderRadius: BorderRadius.circular(OdRadius.sm),
-      ),
-      child: Text(
-        label,
-        style: context.type.titleLarge?.copyWith(
-          color: color,
-          letterSpacing: 2,
         ),
       ),
     );

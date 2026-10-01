@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -14,8 +16,9 @@ class WelcomeScreen extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const OdMediaArt(seed: 3),
-          const OdScrim(top: 0.1, bottom: 0.85),
+          ColoredBox(color: context.od.canvas),
+          const _FloatingMoments(),
+          const OdScrim(top: 0, bottom: 0.7),
           SafeArea(
             // Bottom-anchored, but scrolls instead of overflowing on a small phone with large text.
             child: LayoutBuilder(
@@ -77,6 +80,167 @@ class WelcomeScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Three moments drifting in the upper half: real-looking people doing real things nearby, which says what
+/// OneDay is faster than any sentence. The drift stops when the system asks for reduced motion.
+class _FloatingMoments extends StatefulWidget {
+  const _FloatingMoments();
+
+  @override
+  State<_FloatingMoments> createState() => _FloatingMomentsState();
+}
+
+class _FloatingMomentsState extends State<_FloatingMoments>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _drift = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 7),
+  );
+
+  static const _cards = [
+    // name, person seed, scene seed, activity, x, y, angle
+    ('Riya', 25, 1, 'sunrise trek', 0.03, 0.04, -0.13),
+    ('Arjun', 9, 2, 'chess at a café', 0.5, 0.03, 0.09),
+    ('Zoya', 7, 12, 'rooftop gig', 0.27, 0.37, -0.03),
+  ];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _drift.stop();
+    } else if (!_drift.isAnimating) {
+      _drift.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _drift.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final w = math.min(box.maxWidth * 0.46, 220.0);
+        return AnimatedBuilder(
+          animation: _drift,
+          builder: (context, _) => Stack(
+            children: [
+              for (var i = 0; i < _cards.length; i++)
+                Positioned(
+                  left: box.maxWidth * _cards[i].$5,
+                  top:
+                      box.maxHeight * _cards[i].$6 +
+                      MediaQuery.paddingOf(context).top +
+                      math.sin((_drift.value + i / 3) * 2 * math.pi) * 8,
+                  child: Transform.rotate(
+                    angle: _cards[i].$7,
+                    child: _MomentPreview(
+                      width: w,
+                      name: _cards[i].$1,
+                      person: _cards[i].$2,
+                      scene: _cards[i].$3,
+                      activity: _cards[i].$4,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MomentPreview extends StatelessWidget {
+  const _MomentPreview({
+    required this.width,
+    required this.name,
+    required this.person,
+    required this.scene,
+    required this.activity,
+  });
+
+  final double width;
+  final String name;
+  final int person;
+  final int scene;
+  final String activity;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Container(
+        width: width,
+        height: width * 1.4,
+        decoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          shadows: const [
+            BoxShadow(
+              color: Color(0x99000000),
+              blurRadius: 30,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: ClipRSuperellipse(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              OdMediaArt(seed: scene, activity: activity),
+              const OdScrim(top: 0, bottom: 0.6),
+              const Positioned(top: 10, left: 10, child: OdLiveBadge()),
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: Row(
+                  children: [
+                    OdAvatar(
+                      name: name,
+                      seed: person,
+                      size: 30,
+                      ring: OdRing.live,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            maxLines: 1,
+                            style: context.type.labelLarge?.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            activity,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.type.labelSmall?.copyWith(
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

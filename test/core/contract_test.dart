@@ -159,7 +159,7 @@ void main() {
     ],
     'FriendStories': ['mine', 'firstName', 'moments'],
     'MomentView': ['id', 'mediaUrl', 'caption', 'activityTag', 'postedAt'],
-    'ProfileView': ['displayName', 'homeRegion', 'verificationStatus'],
+    'ProfileView': ['displayName', 'homeRegion', 'bio', 'verificationStatus'],
   };
 
   reads.forEach((schema, fields) {

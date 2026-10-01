@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../tokens/motion.dart';
+import 'media_art.dart';
 
-/// Initials avatar with an optional story ring. The ring shows only for live (24 h) stories: a pre-attentive
+/// Profile picture with an optional story ring. The ring shows only for live (24 h) stories: a pre-attentive
 /// "something new" cue, with no seen/unseen pressure (seen rings simply turn neutral).
 class OdAvatar extends StatelessWidget {
   const OdAvatar({
@@ -14,49 +15,45 @@ class OdAvatar extends StatelessWidget {
     this.size = 56,
     this.ring = OdRing.none,
     this.seed,
+    this.imageUrl,
   });
 
   final String name;
   final double size;
   final OdRing ring;
 
-  /// Stable colour per person.
+  /// Stable illustrated look per person (until they have a photo).
   final int? seed;
+
+  /// The person's photo; the illustration shows while it loads or if it fails.
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
     final c = context.od;
-    final palette = [
-      const Color(0xFF8A4DFF),
-      const Color(0xFFFF6B5A),
-      const Color(0xFF2EC4B6),
-      const Color(0xFFF2387F),
-      const Color(0xFF3A86FF),
-      const Color(0xFFFFB547),
-    ];
-    final color = palette[(seed ?? name.hashCode).abs() % palette.length];
-    final initials = name.trim().isEmpty
-        ? '?'
-        : name.trim().characters.first.toUpperCase();
-    final face = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [color, Color.lerp(color, Colors.black, 0.35)!],
-        ),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * 0.4,
-          fontWeight: FontWeight.w700,
-          height: 1,
+    final personSeed = seed ?? name.hashCode;
+    // A photo when there is one, fading in over the illustrated stand-in (which also covers load errors).
+    final face = SizedBox.square(
+      dimension: size,
+      child: ClipOval(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            OdPortrait(seed: personSeed),
+            if (imageUrl != null)
+              Image.network(
+                imageUrl!,
+                fit: BoxFit.cover,
+                cacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+                frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
+                  opacity: sync || frame != null ? 1 : 0,
+                  duration: OdMotion.of(context, OdMotion.standard),
+                  child: child,
+                ),
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+          ],
         ),
       ),
     );

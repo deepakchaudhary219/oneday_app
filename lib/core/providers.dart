@@ -54,7 +54,14 @@ final myProfileProvider = FutureProvider<MyProfile>(
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   final api = ref.watch(apiClientProvider);
-  return api == null ? FakeAuthRepository() : ApiAuthRepository(api);
+  if (api != null) return ApiAuthRepository(api);
+  // Demo mode can start signed in (screenshots, design reviews): --dart-define=ONEDAY_DEMO_SIGNED_IN=true
+  const signedIn = bool.fromEnvironment('ONEDAY_DEMO_SIGNED_IN');
+  return FakeAuthRepository(
+    initial: signedIn
+        ? const AuthState(AuthStage.signedIn)
+        : AuthState.signedOut,
+  );
 });
 
 final locationShareProvider = Provider<LocationShare>((ref) {

@@ -1,29 +1,32 @@
 import 'package:flutter/material.dart';
 
-/// Five type roles. The platform font (SF Pro / Roboto) keeps rendering native and adds no download.
+/// The type scale, set in Plus Jakarta Sans: geometric and warm, with tight display tracking for a confident,
+/// editorial feel (the role Snapchat's and Instagram's custom faces play), bundled so it renders the same everywhere.
 abstract final class OdType {
+  static const family = 'PlusJakartaSans';
+
   static TextTheme textTheme(Color primary, Color secondary) {
     const tabular = [FontFeature.tabularFigures()];
     return TextTheme(
       displaySmall: TextStyle(
-        fontSize: 34,
-        height: 1.12,
+        fontSize: 36,
+        height: 1.08,
         fontWeight: FontWeight.w800,
-        letterSpacing: -0.8,
+        letterSpacing: -1.2,
         color: primary,
       ),
       headlineSmall: TextStyle(
-        fontSize: 24,
-        height: 1.2,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.4,
+        fontSize: 26,
+        height: 1.15,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.7,
         color: primary,
       ),
       titleLarge: TextStyle(
         fontSize: 20,
         height: 1.25,
         fontWeight: FontWeight.w700,
-        letterSpacing: -0.2,
+        letterSpacing: -0.4,
         color: primary,
       ),
       titleMedium: TextStyle(

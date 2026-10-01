@@ -15,6 +15,7 @@ class NearbyMoment {
     this.prompt,
     this.previewUrl,
     this.why,
+    this.tags = const [],
   });
 
   /// The moment id (what a Signal answers).
@@ -35,6 +36,9 @@ class NearbyMoment {
   /// "Why you see this": shared roots, languages or activity.
   final String? why;
 
+  /// What you have in common, as short chips ("Speaks Malayalam", "Also from Kerala", "Arjun vouches").
+  final List<String> tags;
+
   /// From ConstellationNode.
   factory NearbyMoment.fromJson(Map<String, dynamic> j) => NearbyMoment(
     id: j['nodeId'] as String,
@@ -45,6 +49,11 @@ class NearbyMoment {
     liveCapture: j['liveCaptured'] as bool? ?? false,
     previewUrl: j['previewUrl'] as String?,
     why: j['whyYouSeeThis'] as String?,
+    tags: [
+      for (final l in (j['sharedLanguages'] as List? ?? const [])) 'Speaks $l',
+      if (j['sharedHomeRegion'] != null) 'Also from ${j['sharedHomeRegion']}',
+      if (j['vouchedBy'] != null) '${j['vouchedBy']} vouches',
+    ],
   );
 }
 
@@ -319,17 +328,20 @@ class MyProfile {
   const MyProfile({
     required this.displayName,
     this.homeRegion,
+    this.bio,
     this.verificationStatus = 'UNVERIFIED',
   });
 
   factory MyProfile.fromJson(Map<String, dynamic> j) => MyProfile(
     displayName: j['displayName'] as String? ?? '',
     homeRegion: j['homeRegion'] as String?,
+    bio: j['bio'] as String?,
     verificationStatus: j['verificationStatus'] as String? ?? 'UNVERIFIED',
   );
 
   final String displayName;
   final String? homeRegion;
+  final String? bio;
   final String verificationStatus;
 
   bool get verified => verificationStatus == 'VERIFIED';

@@ -43,10 +43,23 @@ This is how the app should look, feel and behave. It borrows proven interaction 
   - neutrals for everything else;
   - semantic colours for safety (calm teal), warning and error.
 - **8-point grid** with 4-point half-steps. Radii are 8/14/22/32, and continuous corners on cards.
-- **Type:** a single family with five roles (display, title, body, label, caption), using tabular figures for timers.
+- **Type:** Plus Jakarta Sans (bundled, SIL OFL), one family with five roles (display, title, body, label, caption). Display sizes use tight negative tracking for a confident, editorial feel; timers use tabular figures.
 - **Depth through blur and scrims,** not heavy shadows: frosted chrome over media, gradient scrims for legibility on any photo.
 
-## 5. Information architecture
+- **Content-first stand-ins:** the app never shows empty gradients. Until real photos load (and in demo mode), people are drawn as illustrated portraits and moments as painted places chosen from the activity ("sunrise trek" → mountains, "chai" → café). Both are deterministic per seed, so one person looks the same everywhere: avatar, story, Nearby card.
+
+## 5. Surface by surface: the market standard, and where we go further
+
+| Surface | The pattern people know | What OneDay adds |
+| --- | --- | --- |
+| Camera | Snapchat: tools on a right rail, lenses beside the shutter, Memories on the left, profile and search on top | A Friends / Nearby switch that says who sees it; Nearby captures are live and unfiltered, so lenses switch off |
+| Nearby | Tinder: a card deck with drag, tilt and stamps, plus Pass, hero and secondary buttons | Cards are moments, not profiles; chips show what you share (language, roots, a friend who vouches); the hero action spends one of a few daily Signals; the deck ends |
+| Chats | Instagram and Snapchat: stories row, search, rows with a quick-reply camera | Warmth glows instead of streaks, a quiet dot instead of badge counts, and Signals as a stacked-faces card |
+| Me | Instagram: header, bio, Edit and Share, highlights, grid tabs | No follower or like counts; the grid is your private Memory Trail; settings sit behind the menu |
+| Map | Snap Map: dark city, heat, story bubbles, a carousel | Areas, never pins: no person is ever placed on the map; lenses (Roots, language, activity) filter what lights up |
+| Welcome | Hinge and Tinder: real people up front | Floating moment cards that show the product before any sign-up step |
+
+## 6. Information architecture
 
 ```
                  ┌──────── bottom bar mirrors the pager ────────┐
@@ -58,14 +71,14 @@ This is how the app should look, feel and behave. It borrows proven interaction 
    Me (profile, Pulse Status, privacy)
 ```
 
-## 6. Safety in the UI
+## 7. Safety in the UI
 
 Safety is a first-class UI surface, never a buried menu:
 - block and report sit one long-press away on every person-surface;
 - the Empathy Mirror is a calm bottom sheet, not an error;
 - Date Mode SOS is always reachable within one tap while a date is on.
 
-## 7. Accessibility
+## 8. Accessibility
 
 - Tap targets ≥ 48 dp.
 - Semantics labels on every icon button.
@@ -73,7 +86,7 @@ Safety is a first-class UI surface, never a buried menu:
 - Supports text scaling to 200% without clipping.
 - Captions are always available on video.
 
-## 8. Scalable code structure
+## 9. Scalable code structure
 
 - **Feature-first folders** (`lib/features/<feature>/{data,domain,presentation}`) with a shared **design system** (`lib/design_system`) and **core** (`lib/core`: routing, DI, networking).
 - **State: Riverpod.** Repositories sit behind interfaces, with fake implementations until the generated API client is wired. Screens never call HTTP directly.
