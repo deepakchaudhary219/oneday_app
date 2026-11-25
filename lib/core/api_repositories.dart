@@ -13,8 +13,16 @@ class ApiData
         ChatRepository,
         StoryRepository,
         ProfileRepository {
-  ApiData(this.api, {DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  ApiData(
+    this.api, {
+    DateTime Function()? clock,
+    this.pollEvery = const Duration(milliseconds: 700),
+    this.pollLimit = 40,
+  }) : _clock = clock ?? DateTime.now;
+
+  /// How often, and how many times, to ask whether an upload has been processed (about half a minute in all).
+  final Duration pollEvery;
+  final int pollLimit;
 
   final ApiClient api;
   final DateTime Function() _clock;
@@ -103,6 +111,14 @@ class ApiData
   }
 
   @override
+  Future<String?> balanceNudge(String conversationId) async {
+    final json =
+        await api.get('/conversations/$conversationId/balance')
+            as Map<String, dynamic>;
+    return json['state'] == 'NUDGE' ? json['message'] as String? : null;
+  }
+
+  @override
   Future<MyProfile> me() async =>
       MyProfile.fromJson(await api.get('/profile/me') as Map<String, dynamic>);
 
@@ -112,6 +128,86 @@ class ApiData
         .cast<Map<String, dynamic>>();
     final now = _clock();
     return [for (final s in list) Story.fromJson(s, now)];
+  }
+
+  @override
+  Future<String> upload(Capture capture) async {
+    final ticket = await api.post(
+      '/media/uploads',
+      body: {
+        'kind': capture.video ? 'VIDEO' : 'PHOTO',
+        'contentType': capture.contentType,
+        'sizeBytes': capture.bytes.length,
+      },
+    ) as Map<String, dynamic>;
+    final mediaRef = ticket['mediaRef'] as String;
+    await api.upload(
+      ticket['uploadUrl'] as String,
+      capture.bytes,
+      method: ticket['method'] as String? ?? 'PUT',
+      headers: {
+        'Content-Type': capture.contentType,
+        for (final h in (ticket['headers'] as Map? ?? const {}).entries)
+          '${h.key}': '${h.value}',
+      },
+    );
+    var state = await api.post(
+      '/media/uploads/complete',
+      body: {'mediaRef': mediaRef},
+    ) as Map<String, dynamic>;
+    // The server strips metadata (and transcodes video) before anything can be attached.
+    for (var asked = 0; ; asked++) {
+      switch (state['status']) {
+        case 'READY':
+          return mediaRef;
+        case 'REJECTED':
+          throw MediaRejected(
+            state['rejectReason'] as String? ??
+                "That couldn't be used. Try another shot.",
+          );
+      }
+      if (asked >= pollLimit) {
+        throw const ApiError(
+          status: 0,
+          code: 'MEDIA_NOT_READY',
+          detail: 'Still preparing your story. Try again in a moment.',
+        );
+      }
+      await Future<void>.delayed(pollEvery);
+      state = await api.get(
+        '/media/uploads/status',
+        query: {'mediaRef': mediaRef},
+      ) as Map<String, dynamic>;
+    }
+  }
+
+  @override
+  Future<void> publish(StoryDraft draft) async {
+    final caption = draft.caption?.trim() ?? '';
+    final activity = draft.activity?.trim() ?? '';
+    if (draft.mediaRef == null && caption.isEmpty) {
+      throw const CaptionRequired();
+    }
+    try {
+      await api.post(
+        '/moments',
+        body: {
+          'kind': draft.mediaRef == null
+              ? 'TEXT'
+              : (draft.video ? 'VIDEO' : 'PHOTO'),
+          'shareScope': draft.scope.api,
+          if (draft.mediaRef != null) 'mediaRef': draft.mediaRef,
+          // Media only ever comes from the in-app camera, which is what "live" means to the server.
+          if (draft.mediaRef != null) 'capturedLive': true,
+          if (caption.isNotEmpty) 'caption': caption,
+          if (activity.isNotEmpty) 'activityTag': activity,
+        },
+      );
+    } on ApiError catch (e) {
+      if (e.code == 'LOCATION_REQUIRED') throw const LocationRequired();
+      if (e.code == 'CAPTION_REQUIRED') throw const CaptionRequired();
+      rethrow;
+    }
   }
 }
 

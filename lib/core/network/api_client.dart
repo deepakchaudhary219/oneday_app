@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
@@ -15,13 +16,19 @@ class ApiClient {
     required String baseUrl,
     required this.tokens,
     Dio? dio,
+    Dio? uploader,
     DateTime Function()? clock,
     this.retryDelays = const [
       Duration(milliseconds: 400),
       Duration(milliseconds: 1200),
     ],
   }) : _clock = clock ?? DateTime.now,
-       _dio = dio ?? Dio() {
+       _dio = dio ?? Dio(),
+       _uploader = uploader ?? Dio() {
+    _uploader.options
+      ..connectTimeout = const Duration(seconds: 10)
+      ..sendTimeout = const Duration(minutes: 2)
+      ..receiveTimeout = const Duration(seconds: 30);
     _dio.options
       ..baseUrl = baseUrl
       ..connectTimeout = const Duration(seconds: 10)
@@ -37,6 +44,10 @@ class ApiClient {
   final List<Duration> retryDelays;
   final DateTime Function() _clock;
   final Dio _dio;
+
+  /// Talks to media storage. It has no interceptors: a signed upload URL carries its own authorisation, and
+  /// storage rejects a request that also brings the API's bearer token.
+  final Dio _uploader;
   final _signedOut = StreamController<void>.broadcast();
   static const _uuid = Uuid();
 
@@ -87,6 +98,26 @@ class ApiClient {
       options: Options(headers: headers),
     ),
     retryable: true,
+  );
+
+  /// Sends a file straight to storage at the signed [url] from an upload ticket, with exactly the ticket's
+  /// [headers]. A relative URL is resolved against the API (the dev profile serves storage itself).
+  Future<void> upload(
+    String url,
+    Uint8List bytes, {
+    String method = 'PUT',
+    Map<String, String> headers = const {},
+  }) => _send(
+    () => _uploader.requestUri<dynamic>(
+      Uri.parse(_dio.options.baseUrl).resolve(url),
+      data: Stream<List<int>>.fromIterable([bytes]),
+      options: Options(
+        method: method,
+        headers: {...headers, Headers.contentLengthHeader: bytes.length},
+        responseType: ResponseType.plain,
+      ),
+    ),
+    retryable: true, // the same bytes to the same key: storage overwrites
   );
 
   Future<dynamic> patch(String path, {Object? body}) =>
@@ -204,6 +235,17 @@ class ApiClient {
             if (e.value != null) e.key: e.value,
         };
 
+  /// The access token for something outside this client (the socket), refreshed first when it is about to
+  /// expire. Null when signed out.
+  Future<String?> freshAccessToken() async {
+    final current = await tokens.read();
+    if (current == null) return null;
+    if (current.expiresAt.isAfter(_clock().add(const Duration(seconds: 30)))) {
+      return current.access;
+    }
+    return (await _refreshOnce())?.access;
+  }
+
   /// Adopts tokens from a sign-in or re-issue response.
   Future<Tokens> adopt(Map<String, dynamic> issuedToken) async {
     final current = issuedToken['refreshToken'] == null
@@ -221,5 +263,6 @@ class ApiClient {
   void dispose() {
     _signedOut.close();
     _dio.close();
+    _uploader.close();
   }
 }

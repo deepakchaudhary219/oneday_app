@@ -7,7 +7,10 @@ import '../../core/models.dart';
 import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 import '../../core/repositories.dart';
+import '../../core/safety.dart';
 import '../../design_system/design_system.dart';
+import '../relays/relay_screen.dart';
+import '../safety/safety_sheet.dart';
 
 final signalsLeftProvider = FutureProvider.autoDispose<SignalBudget>(
   (ref) => ref.watch(nearbyRepositoryProvider).budget(),
@@ -100,9 +103,45 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen> {
           'Nearby shows moments from the last day, by distance band only. Nobody sees where you are.',
           style: context.type.bodyMedium,
         ),
+        const SizedBox(height: OdSpace.x1),
+        OdButton(
+          label: 'Answer with your own story',
+          variant: OdButtonVariant.secondary,
+          expand: true,
+          onPressed: () {
+            Navigator.of(context).pop();
+            Navigator.of(this.context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => RelayScreen(momentId: m.id),
+              ),
+            );
+          },
+        ),
+        Center(
+          child: OdButton(
+            label: 'Report or block',
+            variant: OdButtonVariant.ghost,
+            onPressed: () {
+              Navigator.of(context).pop();
+              _safety(m);
+            },
+          ),
+        ),
       ],
     ),
   );
+
+  Future<void> _safety(NearbyMoment m) async {
+    final outcome = await showSafetySheet(
+      context,
+      target: SafetyTarget.moment(m.id),
+      firstName: m.firstName,
+    );
+    // Blocked people leave the deck at once; the server leaves them out from now on.
+    if (outcome == SafetyOutcome.blocked && mounted) {
+      setState(() => _gone.add(m.id));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -13,6 +13,9 @@ class DevLocationSource implements LocationSource {
 
   static const _pinned = String.fromEnvironment('ONEDAY_DEV_LOCATION');
 
+  /// A development build with a fixed location: the device isn't asked.
+  static bool get pinned => _pinned.isNotEmpty;
+
   @override
   Future<({double lat, double lon})?> current() async {
     final parts = _pinned.split(',');

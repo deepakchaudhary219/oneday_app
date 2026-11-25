@@ -45,7 +45,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/ScheduleRequest"
+                "$ref" : "#/components/schemas/AmaScheduleRequest"
               }
             }
           },
@@ -185,7 +185,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/AnswerRequest"
+                "$ref" : "#/components/schemas/AmaAnswerRequest"
               }
             }
           },
@@ -1639,7 +1639,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/ProposeRequest"
+                "$ref" : "#/components/schemas/DateProposeRequest"
               }
             }
           },
@@ -2240,7 +2240,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/DeviceView"
+                  "$ref" : "#/components/schemas/PushDeviceView"
                 }
               }
             },
@@ -2385,7 +2385,7 @@
                 "schema" : {
                   "type" : "array",
                   "items" : {
-                    "$ref" : "#/components/schemas/DeviceView"
+                    "$ref" : "#/components/schemas/E2eeDeviceView"
                   }
                 }
               }
@@ -2422,7 +2422,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/DeviceView"
+                  "$ref" : "#/components/schemas/E2eeDeviceView"
                 }
               }
             },
@@ -2607,7 +2607,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/DeviceView"
+                  "$ref" : "#/components/schemas/E2eeDeviceView"
                 }
               }
             },
@@ -2644,7 +2644,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/DeviceView"
+                  "$ref" : "#/components/schemas/E2eeDeviceView"
                 }
               }
             },
@@ -2787,6 +2787,82 @@
           }
         },
         "tags" : [ "PublicFigure" ]
+      }
+    },
+    "/figures/me/broadcasts" : {
+      "get" : {
+        "operationId" : "figureBroadcastMine",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/BroadcastView"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "FigureBroadcast" ]
+      },
+      "post" : {
+        "operationId" : "figureBroadcastPost",
+        "parameters" : [ {
+          "description" : "Optional, up to 100 characters: a retry with the same key and body replays the first response for 24 h",
+          "in" : "header",
+          "name" : "Idempotency-Key",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BroadcastRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BroadcastView"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "tags" : [ "FigureBroadcast" ]
+      }
+    },
+    "/figures/me/broadcasts/{broadcastId}" : {
+      "delete" : {
+        "operationId" : "figureBroadcastDelete",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "broadcastId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "FigureBroadcast" ]
       }
     },
     "/figures/{handle}" : {
@@ -3022,7 +3098,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/StartRequest"
+                "$ref" : "#/components/schemas/LiveStartRequest"
               }
             }
           }
@@ -3678,7 +3754,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/ProposeRequest"
+                "$ref" : "#/components/schemas/SpotlightProposeRequest"
               }
             }
           },
@@ -4455,7 +4531,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/StartRequest"
+                "$ref" : "#/components/schemas/RightNowStartRequest"
               }
             }
           },
@@ -5662,7 +5738,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/ScheduleRequest"
+                "$ref" : "#/components/schemas/PromptScheduleRequest"
               }
             }
           },
@@ -6335,7 +6411,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/AnswerRequest"
+                "$ref" : "#/components/schemas/WellbeingAnswerRequest"
               }
             }
           },
@@ -6476,6 +6552,14 @@
           }
         }
       },
+      "AmaAnswerRequest" : {
+        "type" : "object",
+        "properties" : {
+          "answer" : {
+            "type" : "string"
+          }
+        }
+      },
       "AmaDetail" : {
         "type" : "object",
         "properties" : {
@@ -6490,11 +6574,36 @@
           }
         }
       },
+      "AmaScheduleRequest" : {
+        "type" : "object",
+        "properties" : {
+          "corridorCity" : {
+            "type" : "string"
+          },
+          "corridorRegion" : {
+            "type" : "string"
+          },
+          "minutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "startsAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        }
+      },
       "AmaView" : {
         "type" : "object",
         "properties" : {
           "canAsk" : {
             "type" : "boolean"
+          },
+          "corridorCity" : {
+            "type" : "string"
           },
           "corridorRegion" : {
             "type" : "string"
@@ -6571,15 +6680,6 @@
           }
         },
         "required" : [ "outcome", "response" ]
-      },
-      "AnswerRequest" : {
-        "type" : "object",
-        "properties" : {
-          "wellSpent" : {
-            "type" : "boolean"
-          }
-        },
-        "required" : [ "wellSpent" ]
       },
       "AnswerView" : {
         "type" : "object",
@@ -6681,6 +6781,32 @@
           }
         }
       },
+      "BroadcastRequest" : {
+        "type" : "object",
+        "properties" : {
+          "caption" : {
+            "type" : "string"
+          },
+          "kind" : {
+            "type" : "string",
+            "enum" : [ "PHOTO", "VIDEO", "TEXT" ]
+          },
+          "mediaRef" : {
+            "type" : "string"
+          }
+        }
+      },
+      "BroadcastView" : {
+        "type" : "object",
+        "properties" : {
+          "handle" : {
+            "type" : "string"
+          },
+          "moment" : {
+            "$ref" : "#/components/schemas/MomentView"
+          }
+        }
+      },
       "BudgetView" : {
         "type" : "object",
         "properties" : {
@@ -6770,6 +6896,9 @@
         "type" : "object",
         "properties" : {
           "direction" : {
+            "type" : "string"
+          },
+          "groupTitle" : {
             "type" : "string"
           },
           "id" : {
@@ -6918,6 +7047,14 @@
             "type" : "string"
           },
           "features" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "RIGHT_NOW", "PLANS", "CIRCLE_LIVE", "AMA" ]
+            },
+            "uniqueItems" : true
+          },
+          "gated" : {
             "type" : "array",
             "items" : {
               "type" : "string",
@@ -7193,6 +7330,32 @@
           }
         }
       },
+      "DateProposeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "connectionId" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "endsAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "meetingPointId" : {
+            "type" : "string"
+          },
+          "placeName" : {
+            "type" : "string",
+            "maxLength" : 160,
+            "minLength" : 0
+          },
+          "startsAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "connectionId", "endsAt", "startsAt" ]
+      },
       "DateView" : {
         "type" : "object",
         "properties" : {
@@ -7348,23 +7511,6 @@
         },
         "required" : [ "platform", "pushToken" ]
       },
-      "DeviceView" : {
-        "type" : "object",
-        "properties" : {
-          "deviceId" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "linkedAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "oneTimePreKeysLeft" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        }
-      },
       "DigestItem" : {
         "type" : "object",
         "properties" : {
@@ -7419,6 +7565,23 @@
           }
         }
       },
+      "E2eeDeviceView" : {
+        "type" : "object",
+        "properties" : {
+          "deviceId" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "linkedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "oneTimePreKeysLeft" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
       "EncryptedMessage" : {
         "type" : "object",
         "properties" : {
@@ -7440,6 +7603,9 @@
       "FeedItem" : {
         "type" : "object",
         "properties" : {
+          "broadcast" : {
+            "type" : "boolean"
+          },
           "handle" : {
             "type" : "string"
           },
@@ -8037,6 +8203,17 @@
           "lon" : {
             "type" : "number",
             "format" : "double"
+          }
+        }
+      },
+      "LiveStartRequest" : {
+        "type" : "object",
+        "properties" : {
+          "threadId" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
           }
         }
       },
@@ -8914,13 +9091,30 @@
           }
         }
       },
-      "ProposeRequest" : {
+      "PromptScheduleRequest" : {
         "type" : "object",
         "properties" : {
-          "answerMomentId" : {
-            "type" : "string"
+          "activityHint" : {
+            "type" : "string",
+            "maxLength" : 30,
+            "minLength" : 0
+          },
+          "date" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "homeRegion" : {
+            "type" : "string",
+            "maxLength" : 8,
+            "minLength" : 0
+          },
+          "text" : {
+            "type" : "string",
+            "maxLength" : 140,
+            "minLength" : 0
           }
-        }
+        },
+        "required" : [ "date", "text" ]
       },
       "PulseView" : {
         "type" : "object",
@@ -8987,6 +9181,19 @@
           },
           "state" : {
             "type" : "string"
+          }
+        }
+      },
+      "PushDeviceView" : {
+        "type" : "object",
+        "properties" : {
+          "lastSeenAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "platform" : {
+            "type" : "string",
+            "enum" : [ "ANDROID", "IOS" ]
           }
         }
       },
@@ -9333,6 +9540,21 @@
           }
         }
       },
+      "RightNowStartRequest" : {
+        "type" : "object",
+        "properties" : {
+          "activity" : {
+            "type" : "string",
+            "maxLength" : 30,
+            "minLength" : 0
+          },
+          "minutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "activity" ]
+      },
       "RoomMessage" : {
         "type" : "object",
         "properties" : {
@@ -9370,31 +9592,6 @@
           }
         },
         "required" : [ "body" ]
-      },
-      "ScheduleRequest" : {
-        "type" : "object",
-        "properties" : {
-          "activityHint" : {
-            "type" : "string",
-            "maxLength" : 30,
-            "minLength" : 0
-          },
-          "date" : {
-            "type" : "string",
-            "format" : "date"
-          },
-          "homeRegion" : {
-            "type" : "string",
-            "maxLength" : 8,
-            "minLength" : 0
-          },
-          "text" : {
-            "type" : "string",
-            "maxLength" : 140,
-            "minLength" : 0
-          }
-        },
-        "required" : [ "date", "text" ]
       },
       "ScheduledView" : {
         "type" : "object",
@@ -9436,6 +9633,9 @@
           "opensAt" : {
             "type" : "string",
             "format" : "date-time"
+          },
+          "threadId" : {
+            "type" : "string"
           }
         }
       },
@@ -9635,6 +9835,14 @@
           }
         }
       },
+      "SpotlightProposeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "answerMomentId" : {
+            "type" : "string"
+          }
+        }
+      },
       "SpotlightView" : {
         "type" : "object",
         "properties" : {
@@ -9676,21 +9884,6 @@
             "type" : "string"
           }
         }
-      },
-      "StartRequest" : {
-        "type" : "object",
-        "properties" : {
-          "activity" : {
-            "type" : "string",
-            "maxLength" : 30,
-            "minLength" : 0
-          },
-          "minutes" : {
-            "type" : "integer",
-            "format" : "int32"
-          }
-        },
-        "required" : [ "activity" ]
       },
       "StoryCard" : {
         "type" : "object",
@@ -10178,6 +10371,15 @@
             "format" : "int32"
           }
         }
+      },
+      "WellbeingAnswerRequest" : {
+        "type" : "object",
+        "properties" : {
+          "wellSpent" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "wellSpent" ]
       },
       "YourSide" : {
         "type" : "object",

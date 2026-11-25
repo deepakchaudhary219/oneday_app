@@ -1,71 +1,94 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/network/api_error.dart';
+import '../../core/providers.dart';
+import '../../core/repositories.dart';
+import '../../core/story_map.dart';
 import '../../design_system/design_system.dart';
 
 /// The Story Map (Snap Map's idea, OneDay's privacy): public stories as glowing, k-anonymous area clusters,
 /// never a pin on a person. Lenses (Roots, language, activity, Today's Prompt) filter what lights up. The painter
 /// stands in for the map SDK's dark style until it's wired.
-class MapScreen extends StatefulWidget {
+class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
 
   @override
-  State<MapScreen> createState() => _MapScreenState();
+  ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
+/// An area placed on the canvas: [at] is a fraction of the width and height.
 class _Area {
-  const _Area(
-    this.name,
-    this.at,
-    this.count,
-    this.seed,
-    this.activity,
-    this.lenses,
-  );
+  const _Area(this.area, this.at);
 
-  final String name;
+  final MapArea area;
   final Offset at;
-  final int count;
-  final int seed;
-  final String activity;
-  final Set<String> lenses;
+
+  String get name => area.name;
+
+  int get count => area.count;
+
+  int get seed => area.seed;
+
+  String? get activity => area.activity;
 }
 
-class _MapScreenState extends State<MapScreen> {
-  static const _lenses = [
-    'Everything',
-    'Roots',
-    'Malayalam',
-    'Trek',
-    'Today\'s prompt',
+/// Lays the areas out inside the part of the screen the chrome leaves free, keeping their relative positions
+/// (north is up). Areas without a centre are spread along a row.
+List<_Area> _place(List<MapArea> areas) {
+  const left = 0.18, right = 0.84, top = 0.26, bottom = 0.58;
+  final located = [
+    for (final a in areas)
+      if (a.lat != null && a.lon != null) a,
   ];
-  static const _areas = [
-    _Area('Indiranagar', Offset(0.76, 0.27), 14, 1, 'gig', {
-      'Malayalam',
-      'Today\'s prompt',
-    }),
-    _Area('Cubbon Park', Offset(0.32, 0.22), 6, 2, 'park run', {'Trek'}),
-    _Area('Koramangala', Offset(0.6, 0.55), 23, 3, 'street food', {
-      'Roots',
-      'Malayalam',
-      'Today\'s prompt',
-    }),
-    _Area('HSR Layout', Offset(0.84, 0.43), 5, 4, 'cycling', {'Trek'}),
-    _Area('Jayanagar', Offset(0.2, 0.58), 9, 5, 'chai at a café', {'Roots'}),
-    _Area('MG Road', Offset(0.52, 0.36), 11, 6, 'rooftop', {'Today\'s prompt'}),
+  var minLat = double.infinity, maxLat = -double.infinity;
+  var minLon = double.infinity, maxLon = -double.infinity;
+  for (final a in located) {
+    minLat = math.min(minLat, a.lat!);
+    maxLat = math.max(maxLat, a.lat!);
+    minLon = math.min(minLon, a.lon!);
+    maxLon = math.max(maxLon, a.lon!);
+  }
+  final spanLat = maxLat - minLat, spanLon = maxLon - minLon;
+  var unplaced = 0;
+  return [
+    for (final a in areas)
+      if (a.lat != null && a.lon != null)
+        _Area(
+          a,
+          Offset(
+            spanLon < 1e-9
+                ? 0.5
+                : left + (right - left) * (a.lon! - minLon) / spanLon,
+            spanLat < 1e-9
+                ? 0.42
+                : bottom - (bottom - top) * (a.lat! - minLat) / spanLat,
+          ),
+        )
+      else
+        _Area(a, Offset(left + 0.22 * (unplaced++ % 4), bottom)),
   ];
-  String _lens = _lenses.first;
+}
 
-  bool _visible(_Area a) => _lens == _lenses.first || a.lenses.contains(_lens);
+class _MapScreenState extends ConsumerState<MapScreen> {
+  MapLens _lens = MapLens.everything;
+
+  /// The last map that loaded, kept on screen while another lens loads.
+  List<_Area> _areas = const [];
 
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
     final c = context.od;
+    final map = ref.watch(storyMapProvider(_lens));
+    final data = map.value;
+    if (data != null) _areas = _place(data.areas);
+    final error = map.hasError && data == null ? map.error : null;
     return LayoutBuilder(
       builder: (context, box) {
-        final visible = _areas.where(_visible).toList();
+        final visible = error == null ? _areas : const <_Area>[];
         return Stack(
           children: [
             Positioned.fill(
@@ -74,12 +97,12 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
             // Heat: where the city is sharing right now.
-            for (final a in _areas)
+            for (final a in visible)
               _Heat(
                 center: Offset(a.at.dx * box.maxWidth, a.at.dy * box.maxHeight),
-                radius: 70 + a.count * 4.0,
-                on: _visible(a),
-                color: a.count > 12
+                radius: 70 + math.min(a.count, 30) * 4.0,
+                on: true,
+                color: a.area.busy || a.count > 12
                     ? const Color(0xFFFF3D7F)
                     : const Color(0xFFFF8A4C),
               ),
@@ -89,14 +112,25 @@ class _MapScreenState extends State<MapScreen> {
               top: box.maxHeight * 0.41 - 40,
               child: const IgnorePointer(child: _You()),
             ),
-            for (final a in _areas)
+            for (final a in visible)
               Positioned(
                 left: a.at.dx * box.maxWidth - 40,
                 top: a.at.dy * box.maxHeight - 40,
-                child: AnimatedOpacity(
-                  opacity: _visible(a) ? 1 : 0.18,
-                  duration: OdMotion.of(context, OdMotion.standard),
-                  child: _Cluster(area: a, onTap: () => _open(context, a)),
+                child: _Cluster(area: a, onTap: () => _open(context, a)),
+              ),
+            if (error != null)
+              Center(child: _MapProblem(error: error, lens: _lens))
+            else if (data != null && visible.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(OdSpace.x4),
+                  child: Text(
+                    data.message ?? 'Quiet here right now. Try another lens.',
+                    textAlign: TextAlign.center,
+                    style: context.type.titleMedium?.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
             // Top: title, search, privacy promise, lenses.
@@ -185,14 +219,15 @@ class _MapScreenState extends State<MapScreen> {
                           padding: const EdgeInsets.symmetric(
                             horizontal: OdSpace.gutter,
                           ),
-                          itemCount: _lenses.length,
+                          itemCount: MapLens.values.length,
                           separatorBuilder: (_, _) =>
                               const SizedBox(width: OdSpace.x1),
                           itemBuilder: (_, i) => Center(
                             child: OdChip(
-                              label: _lenses[i],
-                              selected: _lens == _lenses[i],
-                              onTap: () => setState(() => _lens = _lenses[i]),
+                              label: MapLens.values[i].label,
+                              selected: _lens == MapLens.values[i],
+                              onTap: () =>
+                                  setState(() => _lens = MapLens.values[i]),
                             ),
                           ),
                         ),
@@ -252,9 +287,14 @@ class _MapScreenState extends State<MapScreen> {
                 borderRadius: BorderRadius.circular(OdRadius.md),
                 child: SizedBox(
                   width: 112,
-                  child: OdMediaArt(
+                  child: OdMedia(
+                    url: i < a.area.stories.length
+                        ? a.area.stories[i].previewUrl
+                        : null,
                     seed: a.seed * 7 + i,
-                    activity: i.isEven ? a.activity : null,
+                    activity: i < a.area.stories.length
+                        ? a.area.stories[i].activity
+                        : (i.isEven ? a.activity : null),
                   ),
                 ),
               ),
@@ -333,6 +373,51 @@ class _You extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The map couldn't load: usually because the area hasn't been shared yet.
+class _MapProblem extends ConsumerWidget {
+  const _MapProblem({required this.error, required this.lens});
+
+  final Object error;
+  final MapLens lens;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (error is LocationRequired) {
+      return OdClosureCard(
+        icon: Icons.near_me_rounded,
+        title: 'See your city\'s stories',
+        message:
+            'Share your area while the app is open. The map shows areas with several people, never a pin on anyone.',
+        actionLabel: 'Share my area',
+        onAction: () async {
+          final ok = await ref.read(locationShareProvider).share();
+          if (!context.mounted) return;
+          if (ok) {
+            ref.invalidate(storyMapProvider);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Couldn\'t get your location. Check location permission.',
+                ),
+              ),
+            );
+          }
+        },
+      );
+    }
+    return OdClosureCard(
+      icon: Icons.wifi_off_rounded,
+      title: 'Couldn\'t load the map',
+      message: error is ApiError
+          ? (error as ApiError).detail
+          : 'Check your connection and try again.',
+      actionLabel: 'Try again',
+      onAction: () => ref.invalidate(storyMapProvider(lens)),
     );
   }
 }

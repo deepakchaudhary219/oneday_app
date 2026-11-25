@@ -49,6 +49,12 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>OneDay uses the camera for stories, calls and Circle Live.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OneDay uses the microphone for video stories, calls and Circle Live.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>OneDay uses your area, only while the app is open, to show people and stories nearby. Nobody sees where you are.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

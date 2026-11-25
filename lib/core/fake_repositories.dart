@@ -277,6 +277,9 @@ class FakeData
   }
 
   @override
+  Future<String?> balanceNudge(String conversationId) => _later(null);
+
+  @override
   Future<MyProfile> me() => _later(
     const MyProfile(
       displayName: 'Asha',
@@ -286,7 +289,43 @@ class FakeData
   );
 
   @override
-  Future<List<Story>> friendsStories() => _later(const [
+  Future<List<Story>> friendsStories() => _later([
+    for (final s in _stories)
+      s.mine
+          ? Story(
+              id: s.id,
+              firstName: s.firstName,
+              mine: true,
+              seed: s.seed,
+              frames: [...s.frames, ..._posted],
+            )
+          : s,
+  ]);
+
+  /// Stories shared in this session (newest last, the order the viewer plays them).
+  final _posted = <StoryFrame>[];
+
+  @override
+  Future<String> upload(Capture capture) =>
+      _later('fake-media-${_posted.length}');
+
+  @override
+  Future<void> publish(StoryDraft draft) async {
+    await _later<void>(null);
+    final caption = draft.caption?.trim() ?? '';
+    final activity = draft.activity?.trim() ?? '';
+    // The drawn viewfinder stands in for a photo in demo mode, so a caption is optional here.
+    _posted.add(
+      StoryFrame(
+        seed: 40 + _posted.length,
+        postedAgo: 'now',
+        caption: caption.isEmpty ? null : caption,
+        activity: activity.isEmpty ? null : activity,
+      ),
+    );
+  }
+
+  static const _stories = [
     Story(
       id: 'st0',
       firstName: 'You',
@@ -378,5 +417,5 @@ class FakeData
         ),
       ],
     ),
-  ]);
+  ];
 }

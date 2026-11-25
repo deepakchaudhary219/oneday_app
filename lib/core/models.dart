@@ -2,6 +2,8 @@
 /// repositories stay thin and the screens never see JSON.
 library;
 
+import 'dart:typed_data';
+
 /// Nearby moment at Layer 0 (ambient): first name, activity and a distance label, never more.
 class NearbyMoment {
   const NearbyMoment({
@@ -345,4 +347,52 @@ class MyProfile {
   final String verificationStatus;
 
   bool get verified => verificationStatus == 'VERIFIED';
+}
+
+/// Who a story is shared with: exactly the backend's two scopes. Friends see it in Friend Mode; Nearby puts it in
+/// Discovery, which the server accepts only for live in-app captures (or words) and only while the area is shared.
+enum ShareScope {
+  friends('FRIENDS_ONLY'),
+  nearby('PUBLIC_DISCOVERY');
+
+  const ShareScope(this.api);
+
+  final String api;
+}
+
+/// What the in-app camera produced: the encoded file, ready to upload.
+class Capture {
+  const Capture({
+    required this.bytes,
+    required this.contentType,
+    this.video = false,
+  });
+
+  final Uint8List bytes;
+
+  /// `image/jpeg` or `image/png` for photos; `video/mp4` or `video/quicktime` for videos.
+  final String contentType;
+  final bool video;
+}
+
+/// A story about to be published. With no [mediaRef] it is shared as words only, so it needs a [caption].
+class StoryDraft {
+  const StoryDraft({
+    required this.scope,
+    this.mediaRef,
+    this.video = false,
+    this.caption,
+    this.activity,
+  });
+
+  final ShareScope scope;
+
+  /// From [Capture] once it has been uploaded and processed.
+  final String? mediaRef;
+  final bool video;
+  final String? caption;
+  final String? activity;
+
+  static const maxCaption = 200;
+  static const maxActivity = 30;
 }

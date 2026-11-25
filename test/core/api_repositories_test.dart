@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oneday_app/core/api_repositories.dart';
@@ -21,6 +23,7 @@ void main() {
     baseUrl: 'http://api.test',
     tokens: store,
     dio: Dio()..httpClientAdapter = server,
+    uploader: Dio()..httpClientAdapter = server,
     retryDelays: const [Duration.zero],
   );
 
@@ -241,4 +244,142 @@ void main() {
       expect(saved.refresh, 'r0');
     },
   );
+
+  test(
+    'a photo goes to the signed URL without the bearer token, waits for READY, then is published',
+    () async {
+      await store.write(
+        Tokens(
+          access: 'a0',
+          refresh: 'r0',
+          verified: true,
+          expiresAt: DateTime(2030),
+        ),
+      );
+      var polls = 0;
+      final server = FakeServer((o) async {
+        if (o.uri.host == 'store.test') return (200, null);
+        return switch (o.path) {
+          '/media/uploads' => (
+            201,
+            {
+              'mediaRef': 'incoming/u1.jpg',
+              'uploadUrl': 'http://store.test/incoming/u1.jpg?sig=abc',
+              'method': 'PUT',
+              'headers': {'Content-Type': 'image/jpeg', 'x-od-owner': 'u1'},
+            },
+          ),
+          '/media/uploads/complete' => (
+            200,
+            {'mediaRef': 'incoming/u1.jpg', 'status': 'PROCESSING'},
+          ),
+          '/media/uploads/status' => (
+            200,
+            {
+              'mediaRef': 'incoming/u1.jpg',
+              'status': ++polls < 2 ? 'PROCESSING' : 'READY',
+            },
+          ),
+          '/moments' => (201, {'id': 'm9'}),
+          _ => (404, null),
+        };
+      });
+      final data = ApiData(client(server), pollEvery: Duration.zero);
+
+      final mediaRef = await data.upload(
+        Capture(bytes: Uint8List.fromList([1, 2, 3]), contentType: 'image/jpeg'),
+      );
+      expect(mediaRef, 'incoming/u1.jpg');
+      expect(polls, 2);
+      expect(server.requests.first.data, {
+        'kind': 'PHOTO',
+        'contentType': 'image/jpeg',
+        'sizeBytes': 3,
+      });
+      final put = server.requests.firstWhere((r) => r.uri.host == 'store.test');
+      expect(put.method, 'PUT');
+      expect(put.uri.queryParameters['sig'], 'abc');
+      expect(put.headers['x-od-owner'], 'u1');
+      expect(put.headers['Authorization'], isNull);
+      final api = server.requests.firstWhere((r) => r.path == '/media/uploads');
+      expect(api.headers['Authorization'], 'Bearer a0');
+
+      await data.publish(
+        StoryDraft(
+          scope: ShareScope.nearby,
+          mediaRef: mediaRef,
+          caption: '  Sunrise  ',
+          activity: 'trek',
+        ),
+      );
+      expect(server.requests.last.path, '/moments');
+      expect(server.requests.last.data, {
+        'kind': 'PHOTO',
+        'shareScope': 'PUBLIC_DISCOVERY',
+        'mediaRef': 'incoming/u1.jpg',
+        'capturedLive': true,
+        'caption': 'Sunrise',
+        'activityTag': 'trek',
+      });
+    },
+  );
+
+  test(
+    'a words-only story needs words, and a Nearby share before the area is shared asks for it',
+    () async {
+      final server = FakeServer(
+        (o) async => (
+          409,
+          {'code': 'LOCATION_REQUIRED', 'detail': 'Share your location first'},
+        ),
+      );
+      final data = ApiData(client(server));
+      await expectLater(
+        data.publish(const StoryDraft(scope: ShareScope.friends, caption: ' ')),
+        throwsA(isA<CaptionRequired>()),
+      );
+      expect(server.requests, isEmpty);
+
+      await expectLater(
+        data.publish(
+          const StoryDraft(scope: ShareScope.nearby, caption: 'Filter coffee'),
+        ),
+        throwsA(isA<LocationRequired>()),
+      );
+      expect(server.requests.single.data, {
+        'kind': 'TEXT',
+        'shareScope': 'PUBLIC_DISCOVERY',
+        'caption': 'Filter coffee',
+      });
+    },
+  );
+
+  test('an upload the server rejects surfaces its reason', () async {
+    final server = FakeServer((o) async {
+      if (o.uri.host == 'store.test') return (200, null);
+      return switch (o.path) {
+        '/media/uploads' => (
+          201,
+          {'mediaRef': 'incoming/u2.mp4', 'uploadUrl': 'http://store.test/u2'},
+        ),
+        _ => (
+          200,
+          {'status': 'REJECTED', 'rejectReason': 'Videos can be up to 60 s'},
+        ),
+      };
+    });
+    await expectLater(
+      ApiData(client(server)).upload(
+        Capture(
+          bytes: Uint8List.fromList([1]),
+          contentType: 'video/mp4',
+          video: true,
+        ),
+      ),
+      throwsA(
+        isA<MediaRejected>().having((e) => e.reason, 'reason', contains('60')),
+      ),
+    );
+    expect(server.requests.first.data['kind'], 'VIDEO');
+  });
 }

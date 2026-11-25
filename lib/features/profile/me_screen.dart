@@ -3,9 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
+import '../../core/pulse_status.dart';
 import '../../design_system/design_system.dart';
 import '../gallery/gallery_screen.dart';
+import '../plus/plus_screen.dart';
+import '../settings/settings_screen.dart';
+import '../together/together_screen.dart';
 
 /// You, laid out like the profiles people know (Instagram's header, highlights and grid) with OneDay's rules:
 /// no follower counts and no likes, because there's nothing to compare. The grid is your Memory Trail, kept
@@ -19,11 +24,16 @@ class MeScreen extends ConsumerStatefulWidget {
 
 class _MeScreenState extends ConsumerState<MeScreen> {
   static const _moods = [
-    ('😌', 'Chill'),
-    ('🥳', 'Celebrating'),
-    ('🧗', 'Up for adventure'),
-    ('🎧', 'Heads down'),
-    ('🫂', 'Social'),
+    Mood.chill,
+    Mood.celebrating,
+    Mood.adventurous,
+    Mood.focused,
+    Mood.social,
+    Mood.happy,
+    Mood.onTheMove,
+    Mood.tired,
+    Mood.homesick,
+    Mood.low,
   ];
   static const _highlights = [
     ('Treks', 'trek', 31),
@@ -32,8 +42,45 @@ class _MeScreenState extends ConsumerState<MeScreen> {
     ('Gigs', 'gig', 34),
     ('Goa', 'beach', 35),
   ];
-  int? _mood;
+  Mood? _mood;
   int _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    ref
+        .read(pulseRepositoryProvider)
+        .mine()
+        .then((mood) {
+          if (mounted && mood != null) setState(() => _mood = mood);
+        })
+        .catchError((Object _) {}); // the chips simply start unselected
+  }
+
+  /// Pulse Status: tap a mood to share it with friends for a day, tap it again to clear it.
+  Future<void> _setMood(Mood mood) async {
+    final before = _mood;
+    final next = before == mood ? null : mood;
+    setState(() => _mood = next);
+    try {
+      final pulse = ref.read(pulseRepositoryProvider);
+      if (next == null) {
+        await pulse.clear();
+      } else {
+        await pulse.set(next);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _mood = before);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is ApiError ? e.detail : 'Couldn\'t update your status.',
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,9 +263,9 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                 separatorBuilder: (_, _) => const SizedBox(width: OdSpace.x1),
                 itemBuilder: (context, i) => Center(
                   child: OdChip(
-                    label: '${_moods[i].$1}  ${_moods[i].$2}',
-                    selected: _mood == i,
-                    onTap: () => setState(() => _mood = _mood == i ? null : i),
+                    label: '${_moods[i].emoji}  ${_moods[i].label}',
+                    selected: _mood == _moods[i],
+                    onTap: () => _setMood(_moods[i]),
                   ),
                 ),
               ),
@@ -297,13 +344,13 @@ class _MeScreenState extends ConsumerState<MeScreen> {
       children: [
         Text('Settings', style: sheet.type.titleLarge),
         const SizedBox(height: OdSpace.x1),
+        // Each of these lives in the Preference Center. Safe Zones and a standing trusted contact come back
+        // with the location plugin; Date Mode has its own per-date trusted contact.
         for (final (icon, label) in const [
-          (Icons.privacy_tip_outlined, 'Privacy controls'),
-          (Icons.location_off_outlined, 'Safe Zones'),
-          (Icons.shield_outlined, 'Trusted contact'),
+          (Icons.tune_rounded, 'Preferences'),
+          (Icons.privacy_tip_outlined, 'Privacy and consent'),
           (Icons.favorite_border_rounded, 'Dating Lens'),
-          (Icons.block_rounded, 'Blocked people'),
-          (Icons.workspace_premium_outlined, 'OneDay Plus'),
+          (Icons.devices_rounded, 'Signed-in devices'),
           (Icons.help_outline_rounded, 'Help & grievances'),
         ])
           ListTile(
@@ -314,7 +361,49 @@ class _MeScreenState extends ConsumerState<MeScreen> {
               Icons.chevron_right_rounded,
               color: sheet.od.textTertiary,
             ),
-            onTap: () {},
+            onTap: () {
+              Navigator.of(sheet).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+              );
+            },
+          ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.groups_outlined, color: sheet.od.textSecondary),
+          title: Text(
+            'Together: prompt, plans and dates',
+            style: sheet.type.titleMedium,
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            color: sheet.od.textTertiary,
+          ),
+          onTap: () {
+            Navigator.of(sheet).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const TogetherScreen()),
+            );
+          },
+        ),
+        for (final (icon, label, Widget screen) in [
+          (Icons.insights_rounded, 'Your month', const LedgerScreen()),
+          (Icons.workspace_premium_outlined, 'OneDay Plus', const PlusScreen()),
+        ])
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(icon, color: sheet.od.textSecondary),
+            title: Text(label, style: sheet.type.titleMedium),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: sheet.od.textTertiary,
+            ),
+            onTap: () {
+              Navigator.of(sheet).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => screen),
+              );
+            },
           ),
         ListTile(
           contentPadding: EdgeInsets.zero,

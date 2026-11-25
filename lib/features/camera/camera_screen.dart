@@ -1,11 +1,15 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/device.dart';
+import '../../core/models.dart';
+import '../../core/network/api_error.dart';
+import '../../core/providers.dart';
+import '../../core/repositories.dart';
 import '../../design_system/design_system.dart';
-
-/// Where to share a capture: Friend Mode (Connections only, lenses allowed) or Discovery (nearby strangers,
-/// live capture only, unfiltered).
-enum ShareScope { friends, nearby }
 
 /// A look applied live to the viewfinder (Friend Mode only: Nearby shares are live and unfiltered).
 class Lens {
@@ -85,15 +89,17 @@ class Lens {
 
 /// The home surface, laid out the way people's thumbs already know from Snapchat: tools on the right rail,
 /// lenses next to the shutter, memories on the left, your profile and search at the top. The viewfinder is a
-/// stand-in until the `camera` plugin is wired (it needs a device); every control and transition here is real.
-class CameraScreen extends StatefulWidget {
+/// stand-in until the `camera` plugin is wired (it needs a device); every control and transition here is real,
+/// and sharing publishes the story through the story repository.
+class CameraScreen extends ConsumerStatefulWidget {
   const CameraScreen({super.key});
 
   @override
-  State<CameraScreen> createState() => _CameraScreenState();
+  ConsumerState<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+class _CameraScreenState extends ConsumerState<CameraScreen>
+    with WidgetsBindingObserver {
   ShareScope _scope = ShareScope.friends;
   bool _flash = false;
   bool _front = false;
@@ -105,7 +111,46 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Lens get _activeLens => _scope == ShareScope.nearby ? Lens.none : _lens;
 
+  /// The device camera, when the capture source is one. Read once: `ref` isn't usable during dispose.
+  DeviceCamera? _camera;
+
+  @override
+  void initState() {
+    super.initState();
+    final source = ref.read(captureSourceProvider);
+    _camera = source is DeviceCamera ? source : null;
+    WidgetsBinding.instance.addObserver(this);
+    _camera?.open(front: _front);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _camera?.close();
+    super.dispose();
+  }
+
+  /// The camera is released while the app is in the background, and reopened when it returns.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _camera?.open(front: _front);
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _camera?.close();
+    }
+  }
+
+  void _flip() {
+    setState(() => _front = !_front);
+    _camera?.open(front: _front);
+  }
+
   Future<void> _captured({required bool video}) async {
+    final capture = await ref
+        .read(captureSourceProvider)
+        .take(video: video, front: _front);
+    if (!mounted) return;
     setState(() => _frame++);
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -116,6 +161,7 @@ class _CameraScreenState extends State<CameraScreen> {
           child: CapturePreview(
             seed: _frame,
             video: video,
+            capture: capture,
             scope: _scope,
             lens: _activeLens,
             scene: _front ? SceneKind.cafe : SceneKind.mountains,
@@ -134,9 +180,12 @@ class _CameraScreenState extends State<CameraScreen> {
       children: [
         _Viewfinder(
           lens: lens,
-          child: OdMediaArt(
-            seed: _front ? 4 : 0,
-            scene: _front ? SceneKind.cafe : SceneKind.mountains,
+          child: _LiveViewfinder(
+            camera: _camera,
+            fallback: OdMediaArt(
+              seed: _front ? 4 : 0,
+              scene: _front ? SceneKind.cafe : SceneKind.mountains,
+            ),
           ),
         ),
         if (_grid)
@@ -184,7 +233,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 _RailButton(
                   icon: Icons.cameraswitch_rounded,
                   label: 'Flip camera',
-                  onTap: () => setState(() => _front = !_front),
+                  onTap: _flip,
                 ),
                 _RailButton(
                   icon: _flash
@@ -269,6 +318,8 @@ class _CameraScreenState extends State<CameraScreen> {
                   const SizedBox(width: OdSpace.x4),
                   ShutterButton(
                     onPhoto: () => _captured(video: false),
+                    onVideoStart: () =>
+                        ref.read(captureSourceProvider).startVideo(),
                     onVideo: () => _captured(video: true),
                   ),
                   const SizedBox(width: OdSpace.x4),
@@ -287,6 +338,41 @@ class _CameraScreenState extends State<CameraScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The device camera's preview when it's open, the drawn scene otherwise. It fills the screen and crops, the
+/// way camera apps do.
+class _LiveViewfinder extends StatelessWidget {
+  const _LiveViewfinder({required this.camera, required this.fallback});
+
+  final DeviceCamera? camera;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final device = camera;
+    if (device == null) return fallback;
+    return ValueListenableBuilder<CameraController?>(
+      valueListenable: device.controller,
+      builder: (context, controller, _) {
+        if (controller == null || !controller.value.isInitialized) {
+          return fallback;
+        }
+        final size = controller.value.previewSize;
+        return ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              // The preview size is reported in landscape.
+              width: size?.height ?? 1080,
+              height: size?.width ?? 1920,
+              child: CameraPreview(controller),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -575,9 +661,15 @@ class ShutterButton extends StatefulWidget {
     super.key,
     required this.onPhoto,
     required this.onVideo,
+    this.onVideoStart,
   });
 
   final VoidCallback onPhoto;
+
+  /// Recording begins (the shutter is held).
+  final VoidCallback? onVideoStart;
+
+  /// Recording ended (released, or 15 s reached).
   final VoidCallback onVideo;
 
   @override
@@ -624,6 +716,7 @@ class _ShutterButtonState extends State<ShutterButton>
           HapticFeedback.heavyImpact();
           setState(() => _pressed = true);
           _record.forward(from: 0);
+          widget.onVideoStart?.call();
         },
         onLongPressEnd: (_) => _stop(),
         child: AnimatedScale(
@@ -687,13 +780,15 @@ class _RingPainter extends CustomPainter {
       old.progress != progress || old.color != color;
 }
 
-/// After capture: preview, then share. Nearby shares carry the Live badge (captured in-app, unfiltered).
-class CapturePreview extends StatelessWidget {
+/// After capture: add a few words and what you're up to, then share it for 24 hours. Nearby shares carry the Live
+/// badge (captured in-app, unfiltered). With no camera frame (the drawn viewfinder) the story goes out as words.
+class CapturePreview extends ConsumerStatefulWidget {
   const CapturePreview({
     super.key,
     required this.seed,
     required this.video,
     required this.scope,
+    this.capture,
     this.lens = Lens.none,
     this.scene,
   });
@@ -701,20 +796,148 @@ class CapturePreview extends StatelessWidget {
   final int seed;
   final bool video;
   final ShareScope scope;
+
+  /// The shot from the device camera; null with the drawn viewfinder.
+  final Capture? capture;
   final Lens lens;
   final SceneKind? scene;
 
   @override
+  ConsumerState<CapturePreview> createState() => _CapturePreviewState();
+}
+
+class _CapturePreviewState extends ConsumerState<CapturePreview> {
+  static const _activities = [
+    'chai',
+    'trek',
+    'food',
+    'music',
+    'badminton',
+    'study',
+  ];
+
+  final _caption = TextEditingController();
+  final _captionFocus = FocusNode();
+  String? _activity;
+
+  /// Kept after a successful upload, so trying again never uploads twice.
+  String? _mediaRef;
+  bool _sharing = false;
+  String? _problem;
+  bool _needsArea = false;
+
+  @override
+  void dispose() {
+    _caption.dispose();
+    _captionFocus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() {
+      _sharing = true;
+      _problem = null;
+      _needsArea = false;
+    });
+    final stories = ref.read(storyRepositoryProvider);
+    try {
+      final capture = widget.capture;
+      if (capture != null) _mediaRef ??= await stories.upload(capture);
+      await stories.publish(
+        StoryDraft(
+          scope: widget.scope,
+          mediaRef: _mediaRef,
+          video: capture?.video ?? false,
+          caption: _caption.text,
+          activity: _activity,
+        ),
+      );
+      ref.invalidate(friendsStoriesProvider);
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Shared. It disappears in 24 hours.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sharing = false);
+      await _failed(e);
+    }
+  }
+
+  Future<void> _failed(Object error) async {
+    switch (error) {
+      case CaptionRequired():
+        setState(() => _problem = 'Add a few words to share this.');
+        _captionFocus.requestFocus();
+      case LocationRequired():
+        setState(() => _needsArea = true);
+      case MediaRejected(:final reason):
+        _mediaRef = null;
+        setState(() => _problem = reason);
+      case ApiError(:final code) when code.endsWith('VERIFICATION_REQUIRED'):
+        // Progressive verification: sharing is a contact action, so this is where we ask.
+        final verified = await context.push<bool>('/verify');
+        if (verified == true && mounted) await _share();
+      case ApiError(:final code, :final detail):
+        // An upload the server no longer accepts (used, expired, rejected) is sent again next time.
+        if (code.startsWith('MEDIA_')) _mediaRef = null;
+        setState(() => _problem = detail);
+      default:
+        setState(
+          () => _problem =
+              'Couldn\'t share. Check your connection and try again.',
+        );
+    }
+  }
+
+  /// Sharing the area is the person's own tap (it records location consent), never automatic.
+  Future<void> _shareArea() async {
+    if (_sharing) return;
+    setState(() {
+      _sharing = true;
+      _problem = null;
+    });
+    var shared = false;
+    try {
+      shared = await ref.read(locationShareProvider).share();
+    } catch (_) {
+      shared = false;
+    }
+    if (!mounted) return;
+    setState(() => _sharing = false);
+    if (shared) {
+      await _share();
+    } else {
+      setState(() {
+        _needsArea = true;
+        _problem = 'Couldn\'t get your location. Check location permission.';
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final capture = widget.capture;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
           _Viewfinder(
-            lens: lens,
-            child: OdMediaArt(seed: seed, scene: scene),
+            // A real photo is posted as taken, so the preview shows it without the lens.
+            lens: capture == null ? widget.lens : Lens.none,
+            child: capture != null && !capture.video
+                ? Image.memory(
+                    capture.bytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  )
+                : OdMediaArt(seed: widget.seed, scene: widget.scene),
           ),
           const OdScrim(),
           Positioned(
@@ -731,8 +954,8 @@ class CapturePreview extends StatelessWidget {
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 const Spacer(),
-                if (scope == ShareScope.nearby) const OdLiveBadge(),
-                if (video) ...[
+                if (widget.scope == ShareScope.nearby) const OdLiveBadge(),
+                if (widget.video) ...[
                   const SizedBox(width: OdSpace.x1),
                   const OdLiveBadge(label: 'VIDEO'),
                 ],
@@ -743,38 +966,157 @@ class CapturePreview extends StatelessWidget {
             left: OdSpace.gutter,
             right: OdSpace.gutter,
             bottom: padding.bottom + OdSpace.x3,
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: OdButton(
-                    label: 'Save',
-                    icon: Icons.download_rounded,
-                    variant: OdButtonVariant.secondary,
-                    onPressed: () => Navigator.of(context).pop(),
+                if (_problem != null) _Notice(text: _problem!),
+                if (_needsArea)
+                  _Notice(
+                    text:
+                        'Sharing nearby needs your area. People see a distance band, never where you are.',
+                    actionLabel: 'Share my area',
+                    onAction: _sharing ? null : _shareArea,
+                  ),
+                OdFrosted(
+                  radius: OdRadius.lg,
+                  opacity: 0.45,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: OdSpace.x2,
+                    vertical: OdSpace.x0_5,
+                  ),
+                  child: TextField(
+                    controller: _caption,
+                    focusNode: _captionFocus,
+                    enabled: !_sharing,
+                    minLines: 1,
+                    maxLines: 3,
+                    maxLength: StoryDraft.maxCaption,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.done,
+                    cursorColor: Colors.white,
+                    style: context.type.bodyLarge?.copyWith(
+                      color: Colors.white,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: capture == null
+                          ? 'Say something about it'
+                          : 'Add a caption',
+                      hintStyle: context.type.bodyLarge?.copyWith(
+                        color: Colors.white70,
+                      ),
+                      counterText: '',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: OdSpace.x1,
+                      ),
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                    ),
                   ),
                 ),
-                const SizedBox(width: OdSpace.x1_5),
-                Expanded(
-                  flex: 2,
-                  child: OdButton(
-                    label: scope == ShareScope.friends
-                        ? 'Share with friends'
-                        : 'Share nearby',
-                    icon: Icons.send_rounded,
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Shared. It disappears in 24 hours.'),
+                const SizedBox(height: OdSpace.x1_5),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final activity in _activities) ...[
+                        OdChip(
+                          label:
+                              '${activity[0].toUpperCase()}${activity.substring(1)}',
+                          selected: _activity == activity,
+                          onTap: _sharing
+                              ? null
+                              : () => setState(
+                                  () => _activity = _activity == activity
+                                      ? null
+                                      : activity,
+                                ),
                         ),
-                      );
-                    },
+                        const SizedBox(width: OdSpace.x1),
+                      ],
+                    ],
                   ),
+                ),
+                const SizedBox(height: OdSpace.x1_5),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OdButton(
+                        label: 'Save',
+                        icon: Icons.download_rounded,
+                        variant: OdButtonVariant.secondary,
+                        onPressed: _sharing
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                    const SizedBox(width: OdSpace.x1_5),
+                    Expanded(
+                      flex: 2,
+                      child: OdButton(
+                        label: widget.scope == ShareScope.friends
+                            ? 'Share with friends'
+                            : 'Share nearby',
+                        icon: Icons.send_rounded,
+                        loading: _sharing,
+                        onPressed: _share,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A short, calm line above the caption when sharing needs something from the person.
+class _Notice extends StatelessWidget {
+  const _Notice({required this.text, this.actionLabel, this.onAction});
+
+  final String text;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: OdSpace.x1_5),
+      child: Semantics(
+        liveRegion: true,
+        child: OdFrosted(
+          radius: OdRadius.md,
+          opacity: 0.6,
+          padding: const EdgeInsets.all(OdSpace.x1_5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                text,
+                style: context.type.bodyMedium?.copyWith(color: Colors.white),
+              ),
+              if (actionLabel != null) ...[
+                const SizedBox(height: OdSpace.x1),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OdButton(
+                    label: actionLabel!,
+                    variant: OdButtonVariant.secondary,
+                    onPressed: onAction,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

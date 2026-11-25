@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/e2ee.dart';
 import '../../core/models.dart';
+import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
+import '../../core/realtime.dart';
 import '../../core/repositories.dart';
+import '../../core/safety.dart';
 import '../../design_system/design_system.dart';
+import '../calls/call_screen.dart';
+import '../safety/safety_sheet.dart';
 
 /// A conversation. Messages send optimistically (they appear at once, then settle). There are no read receipts
 /// and no typing indicators, so there's nothing to watch and wait on. When the Empathy Mirror flags a message,
@@ -23,15 +29,149 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   final _focus = FocusNode();
   List<ChatMessage>? _messages;
 
+  /// Investment Balance: a private line when the other person has been carrying the conversation.
+  String? _balance;
+
+  /// Once a chat is encrypted it never goes back to plaintext.
+  late bool _encrypted = widget.conversation.encrypted;
+
+  /// Decrypted on this phone, by message id: the only place encrypted messages are readable.
+  Map<String, DecryptedMessage> _decrypted = const {};
+
+  String get _conversationId =>
+      widget.conversation.conversationId ?? widget.conversation.id;
+
   @override
   void initState() {
     super.initState();
-    ref
-        .read(chatRepositoryProvider)
-        .history(widget.conversation.conversationId ?? widget.conversation.id)
-        .then((list) {
-          if (mounted) setState(() => _messages = List.of(list));
-        });
+    final chat = ref.read(chatRepositoryProvider);
+    _loadHistory();
+    chat
+        .balanceNudge(_conversationId)
+        .then((line) {
+          if (mounted && line != null) setState(() => _balance = line);
+        })
+        .catchError((Object _) {}); // a hint, never an error on screen
+  }
+
+  /// The server's history with encrypted messages filled in from this phone's decrypted copies.
+  Future<void> _loadHistory() async {
+    final secure = ref.read(encryptedChatProvider);
+    try {
+      if (secure != null && _encrypted) await secure.receive();
+    } catch (_) {
+      // The inbox can wait; history still loads.
+    }
+    try {
+      final list = await ref.read(chatRepositoryProvider).history(_conversationId);
+      final local = secure == null
+          ? const <DecryptedMessage>[]
+          : await secure.history(_conversationId);
+      if (!mounted) return;
+      final byId = {for (final m in local) m.messageId: m};
+      final shown = <String>{};
+      final merged = [
+        for (final m in list)
+          if (byId[m.id] case final d?) d.toChat() else m,
+      ];
+      shown.addAll(merged.map((m) => m.id));
+      // Older decrypted messages than the server's page still belong in the thread.
+      final older = [
+        for (final d in local)
+          if (!shown.contains(d.messageId)) d.toChat(),
+      ];
+      setState(() {
+        _decrypted = byId;
+        _encrypted = _encrypted || local.isNotEmpty;
+        _messages = [...older, ...merged]..sort((a, b) => a.sentAt.compareTo(b.sentAt));
+      });
+    } catch (_) {
+      if (mounted) setState(() => _messages ??= const []);
+    }
+  }
+
+  Future<void> _turnOnEncryption() async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Turn on end-to-end encryption?'),
+        content: Text(
+          'From now on only you and ${widget.conversation.firstName} can read this chat, on your own phones. '
+          'It can\'t be turned off, and new messages are kept only on your devices.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Not now')),
+          TextButton(onPressed: () => Navigator.of(dialog).pop(true), child: const Text('Turn on')),
+        ],
+      ),
+    );
+    if (sure == true && mounted) setState(() => _encrypted = true);
+  }
+
+  /// Reports a decrypted message with its franking key, which proves to the safety team what was sent.
+  Future<void> _reportEncrypted(ChatMessage message) async {
+    final decrypted = _decrypted[message.id];
+    final secure = ref.read(encryptedChatProvider);
+    if (message.mine || decrypted == null || secure == null) return;
+    final category = await showOdSheet<ReportCategory>(
+      context,
+      builder: (sheet) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Report this message?', style: sheet.type.titleLarge),
+          Text(
+            'Reporting shares this one message with our safety team, with proof it was sent as shown.',
+            style: sheet.type.bodyMedium,
+          ),
+          for (final c in ReportCategory.values)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(c.label),
+              onTap: () => Navigator.of(sheet).pop(c),
+            ),
+        ],
+      ),
+    );
+    if (category == null || !mounted) return;
+    try {
+      final said = await secure.report(
+        conversationId: _conversationId,
+        message: decrypted,
+        category: category.api,
+      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(said)));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e is ApiError ? e.detail : 'Couldn\'t send the report.')),
+        );
+      }
+    }
+  }
+
+  /// A message pushed over the socket: theirs, or mine from another device.
+  void _arrived(RealtimeEvent event) {
+    if (event.type == 'e2ee') {
+      if (event.data['conversationId'] == _conversationId) _loadHistory();
+      return;
+    }
+    if (event.type != 'message' ||
+        event.data['conversationId'] != _conversationId) {
+      return;
+    }
+    final raw = event.data['message'];
+    final current = _messages;
+    if (raw is! Map || current == null) return;
+    final message = ChatMessage.fromJson(raw.cast<String, dynamic>());
+    if (current.any((m) => m.id == message.id)) return;
+    // My own send echoes back before the HTTP answer settles the optimistic bubble.
+    if (message.mine &&
+        current.any((m) => m.pending && m.body == message.body)) {
+      return;
+    }
+    setState(() => _messages = [...current, message]);
   }
 
   @override
@@ -56,17 +196,40 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       _input.clear();
     });
     try {
-      final sent = await ref
-          .read(chatRepositoryProvider)
-          .send(
-            widget.conversation.conversationId ?? widget.conversation.id,
-            body,
-            sendAnyway: sendAnyway,
+      final secure = ref.read(encryptedChatProvider);
+      ChatMessage sent;
+      if (_encrypted && secure != null) {
+        sent = await secure.send(
+          conversationId: _conversationId,
+          connectionId: widget.conversation.id,
+          body: body,
+        );
+        final local = await secure.history(_conversationId);
+        _decrypted = {for (final m in local) m.messageId: m};
+      } else {
+        try {
+          sent = await ref
+              .read(chatRepositoryProvider)
+              .send(_conversationId, body, sendAnyway: sendAnyway);
+        } on ApiError catch (e) {
+          // The other side turned encryption on: this chat is encrypted from now on.
+          if (e.code != 'E2EE_REQUIRED' || secure == null) rethrow;
+          _encrypted = true;
+          sent = await secure.send(
+            conversationId: _conversationId,
+            connectionId: widget.conversation.id,
+            body: body,
           );
+        }
+      }
       if (!mounted) return;
       setState(
         () => _messages = [
-          for (final m in _messages!) m.id == draft.id ? sent.confirmed() : m,
+          for (final m in _messages!)
+            if (m.id == draft.id)
+              sent.confirmed()
+            else if (m.id != sent.id) // the socket may have delivered it already
+              m,
         ],
       );
     } on EmpathyCheck catch (check) {
@@ -85,6 +248,20 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
         _input.text = body; // back to editing, nothing lost
         _focus.requestFocus();
       }
+    } catch (e) {
+      if (!mounted) return;
+      // Not sent: the words go back to the box, and the reason is shown.
+      setState(
+        () => _messages = _messages!.where((m) => m.id != draft.id).toList(),
+      );
+      _input.text = body;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is ApiError ? e.detail : 'Couldn\'t send. Check your connection and try again.',
+          ),
+        ),
+      );
     }
   }
 
@@ -93,6 +270,10 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     final c = context.od;
     final conv = widget.conversation;
     final messages = _messages;
+    ref.listen(realtimeEventsProvider, (_, next) {
+      final event = next.value;
+      if (event != null) _arrived(event);
+    });
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
@@ -113,7 +294,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: context.type.titleMedium,
                   ),
-                  if (conv.encrypted)
+                  if (_encrypted)
                     Row(
                       children: [
                         Icon(
@@ -138,21 +319,43 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           ],
         ),
         actions: [
+          if (!_encrypted && ref.read(encryptedChatProvider) != null)
+            OdIconButton(
+              icon: Icons.lock_open_rounded,
+              semanticLabel: 'Turn on end-to-end encryption',
+              onPressed: _turnOnEncryption,
+            ),
           OdIconButton(
             icon: Icons.call_rounded,
-            semanticLabel: 'Voice call',
-            onPressed: () {},
+            semanticLabel: 'Call',
+            onPressed: () => startCall(context, ref, conv),
           ),
           OdIconButton(
             icon: Icons.more_horiz_rounded,
             semanticLabel: 'Safety and options',
-            onPressed: () => _safety(context),
+            onPressed: _safety,
           ),
           const SizedBox(width: OdSpace.x1),
         ],
       ),
       body: Column(
         children: [
+          if (_balance != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                OdSpace.gutter,
+                OdSpace.x1,
+                OdSpace.gutter,
+                0,
+              ),
+              child: Text(
+                _balance!,
+                textAlign: TextAlign.center,
+                style: context.type.labelMedium?.copyWith(
+                  color: c.textTertiary,
+                ),
+              ),
+            ),
           Expanded(
             child: messages == null
                 ? const Center(child: CircularProgressIndicator.adaptive())
@@ -161,7 +364,14 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                     padding: const EdgeInsets.all(OdSpace.gutter),
                     itemCount: messages.length,
                     itemBuilder: (context, i) =>
-                        _Bubble(message: messages[messages.length - 1 - i]),
+                        GestureDetector(
+                          onLongPress: () => _reportEncrypted(
+                            messages[messages.length - 1 - i],
+                          ),
+                          child: _Bubble(
+                            message: messages[messages.length - 1 - i],
+                          ),
+                        ),
                   ),
           ),
           SafeArea(
@@ -219,31 +429,20 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     );
   }
 
-  void _safety(BuildContext context) {
-    showOdSheet<void>(
+  Future<void> _safety() async {
+    final conv = widget.conversation;
+    final outcome = await showSafetySheet(
       context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.flag_rounded),
-            title: const Text('Report'),
-            onTap: () => Navigator.of(context).pop(),
-          ),
-          ListTile(
-            leading: const Icon(Icons.block_rounded),
-            title: const Text('Block'),
-            onTap: () => Navigator.of(context).pop(),
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout_rounded),
-            title: const Text('Leave quietly'),
-            subtitle: const Text('They won\'t be told'),
-            onTap: () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
+      target: SafetyTarget.connection(conv.id),
+      firstName: conv.firstName,
+      connectionId: conv.id,
     );
+    if (!mounted || outcome == null) return;
+    if (outcome != SafetyOutcome.reported) {
+      // Blocked or left: the chat is over, so it leaves the list and the screen.
+      ref.invalidate(conversationsProvider);
+      Navigator.of(context).pop();
+    }
   }
 }
 
